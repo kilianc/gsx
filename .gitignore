@@ -1,0 +1,15 @@
+*
+
+!*/
+
+!*.gsx
+!*.md
+!*.svg
+!go.*
+!.gitignore
+!Makefile
+
+!cmd/**/*.go
+!e2e/**/*.gsx.go
+!internal/**/*.go
+!pkg/**/*.go

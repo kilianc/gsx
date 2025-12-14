@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-label="GSX logo">
+  <defs>
+    <linearGradient id="gsxGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#00ADD8"/>
+      <stop offset="1" stop-color="#007D9C"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-40%" width="140%" height="180%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="10" result="blur"/>
+      <feOffset in="blur" dx="0" dy="6" result="off"/>
+      <feColorMatrix in="off" type="matrix" values="
+        0 0 0 0 0
+        0 0 0 0 0
+        0 0 0 0 0
+        0 0 0 0.25 0" result="shadow"/>
+      <feMerge>
+        <feMergeNode in="shadow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Mark: angled brackets + slash, nodding to JSX -->
+  <g filter="url(#softShadow)">
+    <path d="M165 85 L85 180 L165 275" fill="none" stroke="url(#gsxGradient)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M420 85 L500 180 L420 275" fill="none" stroke="url(#gsxGradient)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M295 95 L250 270" fill="none" stroke="#0F172A" stroke-width="20" stroke-linecap="round" opacity="0.9"/>
+  </g>
+
+  <!-- Wordmark -->
+  <g font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji" font-weight="800">
+    <text x="560" y="215" font-size="160" fill="#0F172A" letter-spacing="-6">gsx</text>
+    <text x="560" y="280" font-size="44" fill="#334155" font-weight="600" letter-spacing="0">JSX-ish for Go</text>
+  </g>
+</svg>
