@@ -11,3 +11,7 @@ test: clean
 clean:
 	rm -rf ./**/*.gsx.go
 	rm -rf ./**/*.html
+
+.PHONY: vsix
+vsix:
+	cd vscode/gsx-vscode && npm install && npm run compile && npx vsce package --no-dependencies

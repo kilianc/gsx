@@ -139,7 +139,9 @@ The `e2e/` package uses strict golden tests:
 
 ## Editor setup (Cursor/VS Code)
 
-To treat `*.gsx` as Go in the editor, add:
+### Quick + simple (highlighting only)
+
+To treat `*.gsx` as Go in the editor (syntax highlighting), add:
 
 ```json
 {
@@ -148,3 +150,14 @@ To treat `*.gsx` as Go in the editor, add:
   }
 }
 ```
+
+### Full IDE features (gopls-backed LSP)
+
+GSX now includes a **`gsx lsp`** mode that proxies `gopls` and rewrites `*.gsx` to a virtual Go view so you get Go-like:
+
+- diagnostics (lint/typecheck)
+- completion
+- hover
+- go-to-definition
+
+There’s also a thin VS Code extension under `vscode/gsx-vscode/` that runs `gsx lsp`.

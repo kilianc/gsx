@@ -1,0 +1,86 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "gsx",
+  "scopeName": "source.gsx",
+  "patterns": [
+    {
+      "name": "meta.tag.closing.html.gsx",
+      "match": "(</)([A-Za-z][A-Za-z0-9_-]*)(\\s*)(>)",
+      "captures": {
+        "1": { "name": "punctuation.definition.tag.begin.html" },
+        "2": { "name": "entity.name.tag.html" },
+        "4": { "name": "punctuation.definition.tag.end.html" }
+      }
+    },
+    {
+      "name": "meta.tag.opening.html.gsx",
+      "begin": "(<)([A-Za-z][A-Za-z0-9_-]*)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.tag.begin.html" },
+        "2": { "name": "entity.name.tag.html" }
+      },
+      "end": "(/?>)",
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.tag.end.html" }
+      },
+      "patterns": [
+        {
+          "name": "meta.embedded.block.go.gsx",
+          "begin": "\\{",
+          "beginCaptures": { "0": { "name": "punctuation.section.embedded.begin.go" } },
+          "end": "\\}",
+          "endCaptures": { "0": { "name": "punctuation.section.embedded.end.go" } },
+          "patterns": [
+            { "include": "source.go" }
+          ]
+        },
+        {
+          "match": "\\b[A-Za-z_][A-Za-z0-9_-]*\\b(?=\\s*=)",
+          "name": "entity.other.attribute-name.html"
+        },
+        {
+          "name": "string.quoted.double.html",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "match": "\\\\.", "name": "constant.character.escape" }
+          ]
+        },
+        {
+          "name": "string.quoted.single.html",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            { "match": "\\\\.", "name": "constant.character.escape" }
+          ]
+        }
+      ]
+    },
+    {
+      "include": "source.go"
+    }
+  ],
+  "injections": {
+    "L:source.gsx -comment -string": {
+      "patterns": [
+        {
+          "name": "entity.name.tag.html.gsx",
+          "match": "(?<=</?)[A-Za-z][A-Za-z0-9_-]*"
+        },
+        {
+          "name": "entity.other.attribute-name.html.gsx",
+          "match": "(?<=\\s)[A-Za-z_][A-Za-z0-9_-]*(?=\\s*=)"
+        },
+        {
+          "name": "punctuation.definition.tag.begin.html.gsx",
+          "match": "</?"
+        },
+        {
+          "name": "punctuation.definition.tag.end.html.gsx",
+          "match": "/?>"
+        }
+      ]
+    }
+  },
+  "repository": {}
+}
