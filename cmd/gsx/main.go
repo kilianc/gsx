@@ -82,6 +82,7 @@ func main() {
 	sort.Strings(paths)
 	var allErr error
 	for _, pth := range paths {
+		fmt.Fprintf(os.Stderr, "gsx: %s\n", pth)
 		if err := generateFile(root, pth); err != nil {
 			allErr = errors.Join(allErr, err)
 		}
@@ -155,6 +156,7 @@ func generateDir(moduleRoot, dir string) error {
 	sort.Strings(paths)
 
 	for _, pth := range paths {
+		fmt.Fprintf(os.Stderr, "gsx: %s\n", pth)
 		if err := generateFile(moduleRoot, pth); err != nil {
 			return err
 		}
