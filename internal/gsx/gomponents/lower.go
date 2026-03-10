@@ -51,9 +51,21 @@ func lowerNode(n ast.Node, ctx Context) (goast.Expr, error) {
 				if typ, ok := ctx.VarTypes[id.Name]; ok && typ == "Node" {
 					return id, nil
 				}
-				// If this is a slice of Nodes, splice it as a grouped node list.
 				if typ, ok := ctx.VarTypes[id.Name]; ok && typ == "[]Node" {
 					return call(goast.NewIdent("Group"), id), nil
+				}
+			}
+		}
+
+		// Check selector expressions (e.g. d.Child) against known struct field types.
+		if sel, ok := ex.(*goast.SelectorExpr); ok {
+			if xID, ok := sel.X.(*goast.Ident); ok && ctx.VarTypes != nil {
+				key := xID.Name + "." + sel.Sel.Name
+				if typ, ok := ctx.VarTypes[key]; ok && typ == "Node" {
+					return ex, nil
+				}
+				if typ, ok := ctx.VarTypes[key]; ok && typ == "[]Node" {
+					return call(goast.NewIdent("Group"), ex), nil
 				}
 			}
 		}
