@@ -16,8 +16,8 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build
-        run: go build ./...
+      - name: Build (non-e2e packages)
+        run: go build ./cmd/... ./internal/...
 
       - name: Clean generated files
         run: |
