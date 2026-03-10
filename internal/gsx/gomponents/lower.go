@@ -86,8 +86,6 @@ func lowerNode(n ast.Node, ctx Context) (goast.Expr, error) {
 }
 
 func isLikelyNodeExpr(ex goast.Expr) bool {
-	// Conservative heuristic: calls to identifiers starting with an uppercase letter are assumed
-	// to return Node (Div/P/El/If/Group/MyComponent/etc).
 	call, ok := ex.(*goast.CallExpr)
 	if !ok {
 		return false
@@ -97,11 +95,29 @@ func isLikelyNodeExpr(ex goast.Expr) bool {
 		if fun.Name == "" {
 			return false
 		}
-		b := fun.Name[0]
-		return b >= 'A' && b <= 'Z'
+		return fun.Name[0] >= 'A' && fun.Name[0] <= 'Z'
+	case *goast.SelectorExpr:
+		if xID, ok := fun.X.(*goast.Ident); ok {
+			if IsKnownNonNodePkg(xID.Name) {
+				return false
+			}
+		} else {
+			return false
+		}
+		return true
 	default:
 		return false
 	}
+}
+
+func IsKnownNonNodePkg(name string) bool {
+	switch name {
+	case "fmt", "strconv", "strings", "path", "filepath", "time", "os",
+		"math", "regexp", "sort", "bytes", "unicode", "encoding",
+		"errors", "log", "sync", "io", "net", "context", "reflect":
+		return true
+	}
+	return false
 }
 
 func lowerElement(el ast.Element, ctx Context) (goast.Expr, error) {
