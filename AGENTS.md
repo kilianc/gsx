@@ -1,5 +1,10 @@
 # Agent Guidelines
 
+## File Types
+
+- `.gsx` files are **source files** — edit these.
+- `.gsx.go` files are **compiled output** — never edit these directly.
+
 ## Commit Messages
 
 Follow this format:

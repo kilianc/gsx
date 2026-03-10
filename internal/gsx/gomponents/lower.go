@@ -10,7 +10,8 @@ import (
 )
 
 type Context struct {
-	VarTypes map[string]string // Go type strings, e.g. "string", "[]string", "Node"
+	VarTypes        map[string]string // Go type strings, e.g. "string", "[]string", "Node"
+	FuncReturnTypes map[string]string // "pkg.Func" → "string" | "Node", resolved via go/importer
 }
 
 // LowerNodes lowers a list of GSX nodes to a single Go expression that evaluates to Node.
@@ -72,7 +73,7 @@ func lowerNode(n ast.Node, ctx Context) (goast.Expr, error) {
 
 		// If this looks like it produces a Node, splice it directly into children.
 		// This enables patterns like `{If(cond, <p>...</p>)}` and `{Group(nodes)}`.
-		if isLikelyNodeExpr(ex) {
+		if isLikelyNodeExpr(ex, ctx) {
 			return ex, nil
 		}
 		// No implicit stringification: let the Go compiler surface a clear type error
@@ -85,7 +86,7 @@ func lowerNode(n ast.Node, ctx Context) (goast.Expr, error) {
 	}
 }
 
-func isLikelyNodeExpr(ex goast.Expr) bool {
+func isLikelyNodeExpr(ex goast.Expr, ctx Context) bool {
 	call, ok := ex.(*goast.CallExpr)
 	if !ok {
 		return false
@@ -97,12 +98,17 @@ func isLikelyNodeExpr(ex goast.Expr) bool {
 		}
 		return fun.Name[0] >= 'A' && fun.Name[0] <= 'Z'
 	case *goast.SelectorExpr:
-		if xID, ok := fun.X.(*goast.Ident); ok {
-			if IsKnownNonNodePkg(xID.Name) {
-				return false
-			}
-		} else {
+		xID, ok := fun.X.(*goast.Ident)
+		if !ok {
 			return false
+		}
+		if IsKnownNonNodePkg(xID.Name) {
+			return false
+		}
+		if ctx.FuncReturnTypes != nil {
+			if typ, ok := ctx.FuncReturnTypes[xID.Name+"."+fun.Sel.Name]; ok {
+				return typ == "Node"
+			}
 		}
 		return true
 	default:
@@ -197,7 +203,7 @@ func lowerAttr(a ast.Attr, ctx Context) (goast.Expr, error) {
 				}
 			}
 			// If it looks like it yields an attribute node (JoinAttrs/If/Class/etc), pass through.
-			if isLikelyNodeExpr(ex) {
+			if isLikelyNodeExpr(ex, ctx) {
 				return ex, nil
 			}
 			// Default: treat as string expr and let Go typecheck it.
