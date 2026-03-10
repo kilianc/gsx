@@ -237,6 +237,11 @@ func inferVarTypesFromPlaceholders(f *goast.File, phs []placeholder) map[string]
 							out[lhsID.Name] = "string"
 							continue
 						}
+						// Node inference from calls that likely return Node.
+						if isExprNodeish(t.Rhs[i]) {
+							out[lhsID.Name] = "Node"
+							continue
+						}
 					}
 				}
 			}
@@ -265,6 +270,11 @@ func inferVarTypesFromPlaceholders(f *goast.File, phs []placeholder) map[string]
 					// Simple string inference.
 					if isExprStringish(t.Values[i]) {
 						out[t.Names[i].Name] = "string"
+						continue
+					}
+					// Node inference from calls that likely return Node.
+					if isExprNodeish(t.Values[i]) {
+						out[t.Names[i].Name] = "Node"
 						continue
 					}
 				}
@@ -368,6 +378,31 @@ func isExprStringish(e goast.Expr) bool {
 		}
 	}
 	return false
+}
+
+func isExprNodeish(e goast.Expr) bool {
+	ce, ok := e.(*goast.CallExpr)
+	if !ok {
+		return false
+	}
+	switch fun := ce.Fun.(type) {
+	case *goast.Ident:
+		if fun.Name == "" {
+			return false
+		}
+		return fun.Name[0] >= 'A' && fun.Name[0] <= 'Z'
+	case *goast.SelectorExpr:
+		xID, ok := fun.X.(*goast.Ident)
+		if !ok {
+			return false
+		}
+		if gomponents.IsKnownNonNodePkg(xID.Name) {
+			return false
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeParenWrappedPlaceholder(src []byte) []byte {
