@@ -7,6 +7,8 @@ import (
 	"go/format"
 	"go/parser"
 	gotoken "go/token"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
@@ -38,8 +40,14 @@ func CompileFile(path string, src []byte) ([]byte, error) {
 		return nil, fmt.Errorf("%w\n\n-- rewritten preview --\n%s", err, previewLines(string(rewritten), 80))
 	}
 
+	// Resolve imported function return types for accurate Node/string classification.
+	funcReturnTypes := resolveImportedFuncTypes(af)
+
 	// Infer which locals are Nodes (defined from GSX placeholders) so `{ident}` splicing works.
-	ctx := gomponents.Context{VarTypes: inferVarTypesFromPlaceholders(af, mapping)}
+	ctx := gomponents.Context{
+		VarTypes:        inferVarTypesFromPlaceholders(af, mapping, funcReturnTypes),
+		FuncReturnTypes: funcReturnTypes,
+	}
 
 	// Lower placeholders now that we have context.
 	for i := range mapping {
@@ -108,8 +116,14 @@ func CompileFileForLSP(path string, src []byte) (goSrc []byte, sm *SourceMap, er
 		return nil, nil, fmt.Errorf("%w\n\n-- rewritten preview --\n%s", err, previewLines(string(rewrittenBytes), 80))
 	}
 
+	// Resolve imported function return types for accurate Node/string classification.
+	funcReturnTypes := resolveImportedFuncTypes(af)
+
 	// Infer which locals are Nodes (defined from GSX placeholders) so `{ident}` splicing works.
-	ctx := gomponents.Context{VarTypes: inferVarTypesFromPlaceholders(af, mapping)}
+	ctx := gomponents.Context{
+		VarTypes:        inferVarTypesFromPlaceholders(af, mapping, funcReturnTypes),
+		FuncReturnTypes: funcReturnTypes,
+	}
 
 	// Lower placeholders now that we have context.
 	loweredExprs := map[string]string{}
@@ -190,7 +204,140 @@ func mapsToSlice(m map[string]string) []string {
 	return out
 }
 
-func inferVarTypesFromPlaceholders(f *goast.File, phs []placeholder) map[string]string {
+func resolveImportedFuncTypes(f *goast.File) map[string]string {
+	modPath, modRoot := findModuleInfo()
+	if modPath == "" {
+		return nil
+	}
+	result := map[string]string{}
+	for _, spec := range f.Imports {
+		importPath := strings.Trim(spec.Path.Value, `"`)
+		if !strings.HasPrefix(importPath, modPath+"/") && importPath != modPath {
+			continue
+		}
+		relDir := strings.TrimPrefix(importPath, modPath)
+		relDir = strings.TrimPrefix(relDir, "/")
+		absDir := filepath.Join(modRoot, relDir)
+
+		localName := filepath.Base(importPath)
+		if spec.Name != nil && spec.Name.Name != "." && spec.Name.Name != "_" {
+			localName = spec.Name.Name
+		}
+
+		funcTypes := parseFuncReturnTypesFromDir(absDir)
+		for funcName, retType := range funcTypes {
+			result[localName+"."+funcName] = retType
+		}
+	}
+	return result
+}
+
+func findModuleInfo() (modPath string, modRoot string) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", ""
+	}
+	for {
+		gomod := filepath.Join(dir, "go.mod")
+		data, err := os.ReadFile(gomod)
+		if err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "module ") {
+					return strings.TrimSpace(strings.TrimPrefix(line, "module")), dir
+				}
+			}
+			return "", ""
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", ""
+		}
+		dir = parent
+	}
+}
+
+func parseFuncReturnTypesFromDir(dir string) map[string]string {
+	fset := gotoken.NewFileSet()
+	pkgs, err := parser.ParseDir(fset, dir, nil, 0)
+	if err != nil {
+		return nil
+	}
+	result := map[string]string{}
+	for _, pkg := range pkgs {
+		if strings.HasSuffix(pkg.Name, "_test") {
+			continue
+		}
+		for _, file := range pkg.Files {
+			for _, decl := range file.Decls {
+				fd, ok := decl.(*goast.FuncDecl)
+				if !ok || fd.Recv != nil {
+					continue
+				}
+				if !fd.Name.IsExported() {
+					continue
+				}
+				if fd.Type.Results == nil || fd.Type.Results.NumFields() != 1 {
+					continue
+				}
+				retType := classifyASTReturnType(fd.Type.Results.List[0].Type, file.Imports)
+				if retType != "" {
+					result[fd.Name.Name] = retType
+				}
+			}
+		}
+	}
+	return result
+}
+
+func classifyASTReturnType(expr goast.Expr, imports []*goast.ImportSpec) string {
+	switch t := expr.(type) {
+	case *goast.Ident:
+		if t.Name == "string" {
+			return "string"
+		}
+		if t.Name == "Node" {
+			return "Node"
+		}
+	case *goast.SelectorExpr:
+		if t.Sel.Name == "Node" {
+			if xID, ok := t.X.(*goast.Ident); ok {
+				for _, imp := range imports {
+					impPath := strings.Trim(imp.Path.Value, `"`)
+					localName := filepath.Base(impPath)
+					if imp.Name != nil {
+						localName = imp.Name.Name
+					}
+					if localName == xID.Name && strings.Contains(impPath, "gomponents") {
+						return "Node"
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func resolveSelectorCallType(e goast.Expr, funcReturnTypes map[string]string) string {
+	ce, ok := e.(*goast.CallExpr)
+	if !ok {
+		return ""
+	}
+	sel, ok := ce.Fun.(*goast.SelectorExpr)
+	if !ok {
+		return ""
+	}
+	xID, ok := sel.X.(*goast.Ident)
+	if !ok {
+		return ""
+	}
+	if typ, ok := funcReturnTypes[xID.Name+"."+sel.Sel.Name]; ok {
+		return typ
+	}
+	return ""
+}
+
+func inferVarTypesFromPlaceholders(f *goast.File, phs []placeholder, funcReturnTypes map[string]string) map[string]string {
 	phNames := map[string]bool{}
 	for _, p := range phs {
 		phNames[p.name] = true
@@ -232,6 +379,11 @@ func inferVarTypesFromPlaceholders(f *goast.File, phs []placeholder) map[string]
 								continue
 							}
 						}
+						// Resolved return type from imported function signature.
+						if resolved := resolveSelectorCallType(t.Rhs[i], funcReturnTypes); resolved != "" {
+							out[lhsID.Name] = resolved
+							continue
+						}
 						// Simple string inference.
 						if isExprStringish(t.Rhs[i]) {
 							out[lhsID.Name] = "string"
@@ -266,6 +418,11 @@ func inferVarTypesFromPlaceholders(f *goast.File, phs []placeholder) map[string]
 							out[t.Names[i].Name] = "Node"
 							continue
 						}
+					}
+					// Resolved return type from imported function signature.
+					if resolved := resolveSelectorCallType(t.Values[i], funcReturnTypes); resolved != "" {
+						out[t.Names[i].Name] = resolved
+						continue
 					}
 					// Simple string inference.
 					if isExprStringish(t.Values[i]) {
@@ -624,11 +781,17 @@ func ensureImports(f *goast.File, phs []placeholder) {
 		return ni < nj
 	})
 
-	// Remove existing import decls and replace with a single import decl.
+	// For parenthesized imports, modify the existing decl in place to preserve
+	// its position info, which prevents go/format from displacing nearby comments.
+	var parenImport *goast.GenDecl
 	var newDecls []goast.Decl
 	for _, d := range f.Decls {
 		gd, ok := d.(*goast.GenDecl)
 		if ok && gd.Tok == gotoken.IMPORT {
+			if parenImport == nil && gd.Lparen.IsValid() {
+				parenImport = gd
+				newDecls = append(newDecls, d)
+			}
 			continue
 		}
 		newDecls = append(newDecls, d)
@@ -636,13 +799,18 @@ func ensureImports(f *goast.File, phs []placeholder) {
 	f.Decls = newDecls
 	f.Imports = specs
 
-	impDecl := &goast.GenDecl{Tok: gotoken.IMPORT}
-	for _, s := range specs {
-		impDecl.Specs = append(impDecl.Specs, s)
+	if parenImport != nil {
+		parenImport.Specs = nil
+		for _, s := range specs {
+			parenImport.Specs = append(parenImport.Specs, s)
+		}
+	} else {
+		impDecl := &goast.GenDecl{Tok: gotoken.IMPORT}
+		for _, s := range specs {
+			impDecl.Specs = append(impDecl.Specs, s)
+		}
+		f.Decls = append([]goast.Decl{impDecl}, f.Decls...)
 	}
-
-	// Insert import decl right after package decl (at start of Decls).
-	f.Decls = append([]goast.Decl{impDecl}, f.Decls...)
 }
 
 func anyPlaceholderUsesPkgSelector(phs []placeholder, pkg string) bool {
