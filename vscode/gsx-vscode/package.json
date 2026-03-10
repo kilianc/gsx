@@ -1,0 +1,113 @@
+{
+  "name": "gsx-vscode",
+  "displayName": "GSX - Go + HTML Components",
+  "description": "GSX language support: syntax highlighting, diagnostics, go-to-definition, hover, and completions via gopls.",
+  "publisher": "kilianc",
+  "repository": {
+    "url": "https://github.com/kilianc/gsx"
+  },
+  "activationEvents": [
+    "onLanguage:gsx"
+  ],
+  "main": "./dist/main.js",
+  "version": "0.0.7",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "keywords": [
+    "gsx",
+    "go",
+    "golang",
+    "html",
+    "jsx",
+    "components",
+    "gomponents"
+  ],
+  "scripts": {
+    "webpack": "webpack --mode development",
+    "compile": "webpack --mode production",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package --no-dependencies"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "gsx",
+        "aliases": [
+          "GSX",
+          "gsx"
+        ],
+        "extensions": [
+          ".gsx"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "gsx",
+        "scopeName": "source.gsx",
+        "path": "./syntaxes/gsx.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.block.go": "go",
+          "meta.embedded.block.html": "html"
+        }
+      }
+    ],
+    "commands": [
+      {
+        "command": "gsx.restartServer",
+        "title": "GSX: Restart Language Server"
+      }
+    ],
+    "configuration": {
+      "title": "GSX",
+      "properties": {
+        "gsx.goplsLog": {
+          "type": "string",
+          "default": "",
+          "description": "Path to write gopls logs to (passed as `gsx lsp -goplsLog=...`)"
+        },
+        "gsx.goplsRPCTrace": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable gopls RPC tracing (passed as `gsx lsp -goplsRPCTrace=true`)"
+        },
+        "gsx.goplsRemote": {
+          "type": "string",
+          "default": "",
+          "description": "Remote gopls instance to connect to (passed as `gsx lsp -goplsRemote=...`)"
+        },
+        "gsx.executablePath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the gsx executable. Use this if the extension can't find `gsx` in PATH."
+        }
+      }
+    },
+    "configurationDefaults": {
+      "explorer.fileNesting.enabled": true,
+      "explorer.fileNesting.patterns": {
+        "*.gsx": "${capture}.gsx.go"
+      }
+    }
+  },
+  "devDependencies": {
+    "@types/vscode": "1.95.0",
+    "@vscode/vsce": "^3.2.2",
+    "ts-loader": "9.5.1",
+    "typescript": "5.7.2",
+    "webpack": "5.94.0",
+    "webpack-cli": "5.1.4"
+  },
+  "dependencies": {
+    "lookpath": "^1.2.2",
+    "vscode-languageclient": "9.0.1"
+  },
+  "extensionDependencies": [
+    "golang.go"
+  ]
+}

@@ -9,12 +9,22 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"context"
 
 	"github.com/kilianc/gsx/internal/gsx/compile"
+	"github.com/kilianc/gsx/internal/gsx/lsp"
 	"github.com/kilianc/gsx/internal/gsx/outfile"
 )
 
 func main() {
+	// Subcommand: `gsx lsp`
+	if len(os.Args) > 1 && os.Args[1] == "lsp" {
+		if err := lspMain(os.Args[2:]); err != nil {
+			fatal(err)
+		}
+		return
+	}
+
 	flag.Usage = func() {
 		_, _ = fmt.Fprintln(os.Stderr, "Usage: gsx [flags] [paths...]")
 		_, _ = fmt.Fprintln(os.Stderr, "")
@@ -90,6 +100,28 @@ func main() {
 	if allErr != nil {
 		fatal(allErr)
 	}
+}
+
+func lspMain(args []string) error {
+	fs := flag.NewFlagSet("lsp", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	goplsLog := fs.String("goplsLog", "", "path to gopls log file (passed as -logfile)")
+	goplsRPCTrace := fs.Bool("goplsRPCTrace", false, "enable gopls RPC tracing (passed as -rpc.trace)")
+	goplsRemote := fs.String("goplsRemote", "", "gopls remote (passed as -remote)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	var goplsArgs []string
+	if *goplsLog != "" {
+		goplsArgs = append(goplsArgs, "-logfile", *goplsLog)
+	}
+	if *goplsRPCTrace {
+		goplsArgs = append(goplsArgs, "-rpc.trace")
+	}
+	if *goplsRemote != "" {
+		goplsArgs = append(goplsArgs, "-remote", *goplsRemote)
+	}
+	return lsp.Run(context.Background(), os.Stdin, os.Stdout, goplsArgs)
 }
 
 func fatal(err error) {

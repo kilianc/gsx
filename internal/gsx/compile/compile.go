@@ -81,6 +81,115 @@ func CompileFile(path string, src []byte) ([]byte, error) {
 	return final, nil
 }
 
+// CompileFileForLSP compiles a .gsx source into a Go source file suitable for feeding to gopls.
+//
+// Unlike CompileFile, it does NOT inline tag expressions at call sites. Instead, tag expressions are
+// replaced with stable placeholder calls like `__gsx_expr_1()` and the corresponding helper functions
+// are appended to the file.
+//
+// It also returns the rewritten Go-ish source (tags -> placeholders) to help higher layers build
+// best-effort mappings back to the original .gsx file.
+func CompileFileForLSP(path string, src []byte) (goSrc []byte, sm *SourceMap, err error) {
+	rewrittenBytes, mapping, err := rewriteTagsToPlaceholders(src)
+	if err != nil {
+		return nil, nil, err
+	}
+	rewrittenBytes = normalizeParenWrappedPlaceholder(rewrittenBytes)
+	rewritten := string(rewrittenBytes)
+	// normalizeParenWrappedPlaceholder may remove lines and change the positions of placeholder calls.
+	// Re-index placeholder target positions so we can safely apply inline expansions.
+	if mapping, err = reindexPlaceholderTargets(rewritten, mapping); err != nil {
+		return nil, nil, err
+	}
+
+	fset := gotoken.NewFileSet()
+	af, err := parser.ParseFile(fset, path+".go", rewrittenBytes, parser.ParseComments)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w\n\n-- rewritten preview --\n%s", err, previewLines(string(rewrittenBytes), 80))
+	}
+
+	// Infer which locals are Nodes (defined from GSX placeholders) so `{ident}` splicing works.
+	ctx := gomponents.Context{VarTypes: inferVarTypesFromPlaceholders(af, mapping)}
+
+	// Lower placeholders now that we have context.
+	loweredExprs := map[string]string{}
+	for i := range mapping {
+		ex, err := gomponents.LowerNodes([]ast.Node{mapping[i].node}, ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		clearTokenPos(ex)
+		mapping[i].expr = ex
+		loweredExprs[mapping[i].name] = formatExpr(ex)
+	}
+
+	// Apply minimal import edits and inline placeholder expansions to produce a gopls-friendly Go view.
+	req := detectRequiredImports(mapping, mapsToSlice(loweredExprs))
+	impRes := applyImportEdits(rewritten, req)
+
+	// When we changed imports, all subsequent placeholder offsets shift. Map placeholder tgtStart/tgtEnd accordingly.
+	// We do this by mapping offsets from rewritten -> afterImports using the import mapper.
+	afterImports := impRes.out
+	adjusted := make([]placeholder, len(mapping))
+	for i := range mapping {
+		p := mapping[i]
+		ns, _ := impRes.mp.tgtOffsetFromSrcOffset(p.tgtStart)
+		ne, _ := impRes.mp.tgtOffsetFromSrcOffset(p.tgtEnd)
+		p.tgtStart = ns
+		p.tgtEnd = ne
+		adjusted[i] = p
+	}
+
+	expRes := applyInlineExpansions(afterImports, adjusted, loweredExprs, true, true)
+	goView := expRes.out
+
+	// Build source map: src(.gsx) -> rewritten(placeholders) -> afterImports -> goView.
+	srcStr := string(src)
+	srcToRew, rewToSrc := buildRewriteMappers(srcStr, mapping)
+
+	sm = &SourceMap{
+		src:                     newLineIndex(srcStr),
+		tgt:                     newLineIndex(goView),
+		srcToRewritten:          srcToRew,
+		rewrittenToSrc:          rewToSrc,
+		rewrittenToAfterImports: impRes.mp,
+		afterImportsToRewritten: impRes.mp,
+		afterImportsToTgt:       expRes.mp,
+		tgtToAfterImports:       expRes.mp,
+	}
+
+	return []byte(goView), sm, nil
+}
+
+func reindexPlaceholderTargets(rewritten string, phs []placeholder) ([]placeholder, error) {
+	// Each placeholder name is unique, so we can locate `name()` exactly once.
+	// We scan left-to-right to keep it linear and robust.
+	out := make([]placeholder, len(phs))
+	searchFrom := 0
+	for i := range phs {
+		needle := phs[i].name + "()"
+		j := strings.Index(rewritten[searchFrom:], needle)
+		if j < 0 {
+			return nil, fmt.Errorf("lsp: could not locate placeholder %q in rewritten source", needle)
+		}
+		j += searchFrom
+		p := phs[i]
+		p.tgtStart = j
+		p.tgtEnd = j + len(needle)
+		out[i] = p
+		searchFrom = p.tgtEnd
+	}
+	return out, nil
+}
+
+func mapsToSlice(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for _, v := range m {
+		out = append(out, v)
+	}
+	return out
+}
+
 func inferVarTypesFromPlaceholders(f *goast.File, phs []placeholder) map[string]string {
 	phNames := map[string]bool{}
 	for _, p := range phs {
@@ -326,6 +435,12 @@ type placeholder struct {
 	name string
 	node ast.Node
 	expr goast.Expr
+	// srcStart/srcEnd are byte offsets in the original .gsx source that were replaced by this placeholder call.
+	srcStart int
+	srcEnd   int
+	// tgtStart/tgtEnd are byte offsets in the rewritten source (tags -> placeholder calls) that correspond to the placeholder call.
+	tgtStart int
+	tgtEnd   int
 }
 
 func rewriteTagsToPlaceholders(src []byte) ([]byte, []placeholder, error) {
@@ -355,14 +470,25 @@ func rewriteTagsToPlaceholders(src []byte) ([]byte, []placeholder, error) {
 		case '<':
 			// Disambiguate: treat as tag only if next char is an identifier start.
 			if b := s.peekN(1); isTagStart(b) {
+				srcStart := s.i
 				el, err := parseTagExpr(s)
 				if err != nil {
 					return nil, nil, err
 				}
+				srcEnd := s.i
 				name := "__gsx_expr_" + strconv.Itoa(len(phs)+1)
-				phs = append(phs, placeholder{name: name, node: el})
+				tgtStart := out.Len()
 				out.WriteString(name)
 				out.WriteString("()")
+				tgtEnd := out.Len()
+				phs = append(phs, placeholder{
+					name:     name,
+					node:     el,
+					srcStart: srcStart,
+					srcEnd:   srcEnd,
+					tgtStart: tgtStart,
+					tgtEnd:   tgtEnd,
+				})
 				continue
 			}
 		}
