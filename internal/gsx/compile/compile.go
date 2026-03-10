@@ -87,9 +87,28 @@ func inferVarTypesFromPlaceholders(f *goast.File, phs []placeholder) map[string]
 		phNames[p.name] = true
 	}
 
+	structFields := collectStructFields(f)
+
 	out := map[string]string{}
 	goast.Inspect(f, func(n goast.Node) bool {
 		switch t := n.(type) {
+		case *goast.FuncDecl:
+			if t.Type != nil && t.Type.Params != nil {
+				for _, field := range t.Type.Params.List {
+					typName := identName(field.Type)
+					if typName == "" {
+						continue
+					}
+					for _, name := range field.Names {
+						out[name.Name] = typName
+						if fields, ok := structFields[typName]; ok {
+							for fieldName, fieldType := range fields {
+								out[name.Name+"."+fieldName] = fieldType
+							}
+						}
+					}
+				}
+			}
 		case *goast.AssignStmt:
 			// x := __gsx_expr_1()
 			for i := range t.Rhs {
@@ -174,6 +193,52 @@ func typeString(t goast.Expr) string {
 	return ""
 }
 
+func collectStructFields(f *goast.File) map[string]map[string]string {
+	out := map[string]map[string]string{}
+	for _, decl := range f.Decls {
+		gd, ok := decl.(*goast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			ts, ok := spec.(*goast.TypeSpec)
+			if !ok {
+				continue
+			}
+			st, ok := ts.Type.(*goast.StructType)
+			if !ok {
+				continue
+			}
+			fields := map[string]string{}
+			for _, f := range st.Fields.List {
+				typ := typeString(f.Type)
+				if typ == "" {
+					if sel, ok := f.Type.(*goast.SelectorExpr); ok && sel.Sel.Name == "Node" {
+						typ = "Node"
+					}
+				}
+				if typ == "" {
+					continue
+				}
+				for _, name := range f.Names {
+					fields[name.Name] = typ
+				}
+			}
+			if len(fields) > 0 {
+				out[ts.Name.Name] = fields
+			}
+		}
+	}
+	return out
+}
+
+func identName(t goast.Expr) string {
+	if id, ok := t.(*goast.Ident); ok {
+		return id.Name
+	}
+	return ""
+}
+
 func isExprStringish(e goast.Expr) bool {
 	// string literal
 	if bl, ok := e.(*goast.BasicLit); ok && bl.Kind == gotoken.STRING {
@@ -232,8 +297,9 @@ func normalizeParenWrappedPlaceholder(src []byte) []byte {
 			if i+2 < len(lines) {
 				exprLine := strings.TrimSpace(lines[i+1])
 				closeLine := strings.TrimSpace(lines[i+2])
-				if strings.HasPrefix(exprLine, "__gsx_expr_") && strings.HasSuffix(exprLine, "()") && closeLine == ")" {
-					out = append(out, indent+prefix+" "+exprLine)
+				if strings.HasPrefix(exprLine, "__gsx_expr_") && strings.HasSuffix(exprLine, "()") && strings.HasPrefix(closeLine, ")") {
+					rest := closeLine[1:]
+					out = append(out, indent+prefix+" "+exprLine+rest)
 					i += 3
 					continue
 				}
@@ -827,11 +893,11 @@ func parseTagExpr(s *scanner) (ast.Node, error) {
 			attrs = append(attrs, ast.Attr{Key: "", Kind: ast.AttrExpr, Value: strings.TrimSpace(expr)})
 			continue
 		}
-		key, kind, val, err := parseAttr(s)
+		attr, err := parseAttr(s)
 		if err != nil {
 			return nil, err
 		}
-		attrs = append(attrs, ast.Attr{Key: key, Kind: kind, Value: val})
+		attrs = append(attrs, attr)
 	}
 
 	// children until </tag>
@@ -909,8 +975,7 @@ func skipSpace(s *scanner) {
 	}
 }
 
-func parseAttr(s *scanner) (key string, kind ast.AttrKind, val string, err error) {
-	// key
+func parseAttr(s *scanner) (ast.Attr, error) {
 	start := s.i
 	for {
 		b := s.peek()
@@ -920,10 +985,15 @@ func parseAttr(s *scanner) (key string, kind ast.AttrKind, val string, err error
 		}
 		break
 	}
-	key = string(s.src[start:s.i])
+	key := string(s.src[start:s.i])
 	skipSpace(s)
+
+	if s.peek() == '?' && s.peekN(1) == '=' {
+		return ast.Attr{}, fmt.Errorf("unsupported ?= syntax for attribute %q; use {If(cond, Attr(...))} instead", key)
+	}
+
 	if s.peek() != '=' {
-		return key, ast.AttrBool, "", nil
+		return ast.Attr{Key: key, Kind: ast.AttrBool}, nil
 	}
 	s.next()
 	skipSpace(s)
@@ -934,23 +1004,23 @@ func parseAttr(s *scanner) (key string, kind ast.AttrKind, val string, err error
 		for !s.eof() && s.peek() != '"' {
 			s.next()
 		}
-		val = string(s.src[vstart:s.i])
+		val := string(s.src[vstart:s.i])
 		if s.peek() == '"' {
 			s.next()
 		}
-		return key, ast.AttrString, val, nil
+		return ast.Attr{Key: key, Kind: ast.AttrString, Value: val}, nil
 	case '{':
 		expr, err := readBracedSource(s)
 		if err != nil {
-			return "", 0, "", err
+			return ast.Attr{}, err
 		}
 		expr, err = rewriteTagsInGoExpr(expr)
 		if err != nil {
-			return "", 0, "", err
+			return ast.Attr{}, err
 		}
-		return key, ast.AttrExpr, strings.TrimSpace(expr), nil
+		return ast.Attr{Key: key, Kind: ast.AttrExpr, Value: strings.TrimSpace(expr)}, nil
 	default:
-		return "", 0, "", fmt.Errorf("expected attr value for %s", key)
+		return ast.Attr{}, fmt.Errorf("expected attr value for %s", key)
 	}
 }
 
