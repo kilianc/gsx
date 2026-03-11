@@ -9,7 +9,7 @@ import (
 	"github.com/kilianc/gsx/e2e/helpers"
 
 	. "maragu.dev/gomponents"
-	. "maragu.dev/gomponents/html"
+	html "maragu.dev/gomponents/html"
 )
 
 func init() {
@@ -32,7 +32,7 @@ func NodeExpressions() Node {
 	name := "test"
 	formatted := fmt.Sprintf("hi %s", name)
 
-	return Div(
+	return html.Div(
 		child,
 		local,
 		lower,

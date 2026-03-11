@@ -7,7 +7,7 @@ import (
 	"github.com/kilianc/gsx/e2e/helpers"
 
 	. "maragu.dev/gomponents"
-	. "maragu.dev/gomponents/html"
+	html "maragu.dev/gomponents/html"
 )
 
 func init() {
@@ -17,10 +17,10 @@ func init() {
 }
 
 func TypedParams() Node {
-	return Div(
+	return html.Div(
 		helpers.SectionHeading("Debug"),
 		helpers.Badge("Active", "success"),
-		helpers.SectionWithHeading("Info", P(Text("content"))),
+		helpers.SectionWithHeading("Info", html.P(Text("content"))),
 		helpers.StatusDot(true),
 		helpers.EmptyState("No items found"),
 	)

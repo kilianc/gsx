@@ -6,7 +6,7 @@ package e2e
 import (
 	. "maragu.dev/gomponents"
 
-	. "maragu.dev/gomponents/html"
+	html "maragu.dev/gomponents/html"
 )
 
 func init() {
@@ -16,5 +16,9 @@ func init() {
 }
 
 func ConditionalClasses(active bool) Node {
-	return Div(Class("btn extra"), If(active, Class("is-active")), Text("ok"))
+	return html.Div(
+		html.Class("btn extra"),
+		If(active, html.Class("is-active")),
+		Text("ok"),
+	)
 }

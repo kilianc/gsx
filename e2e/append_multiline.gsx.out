@@ -6,7 +6,7 @@ package e2e
 import (
 	. "maragu.dev/gomponents"
 
-	. "maragu.dev/gomponents/html"
+	html "maragu.dev/gomponents/html"
 )
 
 func init() {
@@ -19,5 +19,5 @@ func AppendMultiline() Node {
 	var rows []Node
 	rows = append(rows, El("tr", El("td", Text("hello"))))
 	rows = append(rows, El("tr", El("td", Text("world"))))
-	return Div(Group(rows))
+	return html.Div(Group(rows))
 }

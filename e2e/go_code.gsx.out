@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	. "maragu.dev/gomponents"
-	. "maragu.dev/gomponents/html"
+	html "maragu.dev/gomponents/html"
 	"math/rand"
 )
 
@@ -30,17 +30,22 @@ func GoCode() Node {
 	lis := listItems(colors)
 
 	topClass := "top"
-	top := Div(Class(topClass), P(Text("hello")), P(Text(hello)), Ul(Group(lis)))
-
-	bottomClass := "bottom"
-	bottom := Div(
-		Class(bottomClass),
-		P(Class(getRandomClass()), Text("hello")),
-		P(Class(getRandomClass()), Text(hello)),
-		Ul(Class(getRandomClass()), Group(lis)),
+	top := html.Div(
+		html.Class(topClass),
+		html.P(Text("hello")),
+		html.P(Text(hello)),
+		html.Ul(Group(lis)),
 	)
 
-	return Div(top, bottom)
+	bottomClass := "bottom"
+	bottom := html.Div(
+		html.Class(bottomClass),
+		html.P(html.Class(getRandomClass()), Text("hello")),
+		html.P(html.Class(getRandomClass()), Text(hello)),
+		html.Ul(html.Class(getRandomClass()), Group(lis)),
+	)
+
+	return html.Div(top, bottom)
 }
 
 func getRandomClass() string {
@@ -50,7 +55,7 @@ func getRandomClass() string {
 func listItems(colors []string) []Node {
 	var lis []Node
 	for _, color := range colors {
-		lis = append(lis, Li(Text(color)))
+		lis = append(lis, html.Li(Text(color)))
 	}
 	return lis
 }

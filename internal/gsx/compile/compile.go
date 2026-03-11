@@ -62,11 +62,8 @@ func compilePipeline(path string, src []byte) (*compileResult, error) {
 		funcParams[name] = params
 	}
 
-	qualifyHTML := hasUserDotImports(af)
-	htmlPrefix := ""
-	if qualifyHTML {
-		htmlPrefix = "html"
-	}
+	qualifyHTML := true
+	htmlPrefix := "html"
 
 	ctx := gomponents.Context{
 		VarTypes:        inferVarTypesFromPlaceholders(af, mapping, funcReturnTypes),
@@ -960,17 +957,6 @@ func usesIdent(node goast.Node, name string) bool {
 	return found
 }
 
-func hasUserDotImports(f *goast.File) bool {
-	for _, spec := range f.Imports {
-		if spec.Name != nil && spec.Name.Name == "." {
-			path := strings.Trim(spec.Path.Value, `"`)
-			if !strings.HasPrefix(path, "maragu.dev/gomponents") {
-				return true
-			}
-		}
-	}
-	return false
-}
 
 type impSpec struct {
 	name string
