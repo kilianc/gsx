@@ -1,6 +1,9 @@
 package helpers
 
 import (
+	"database/sql"
+	"time"
+
 	g "maragu.dev/gomponents"
 	"maragu.dev/gomponents/html"
 )
@@ -41,4 +44,30 @@ func StatusDot(active bool) g.Node {
 
 func EmptyState(message string) g.Node {
 	return html.Div(html.Class("empty"), html.P(g.Text(message)))
+}
+
+type LinkData struct {
+	URL  string
+	Text string
+}
+
+func CellTime(t time.Time) g.Node {
+	return html.Td(g.Text(t.Format(time.RFC3339)))
+}
+
+func CellLink(link LinkData) g.Node {
+	return html.Td(html.A(html.Href(link.URL), g.Text(link.Text)))
+}
+
+func CellNullText(value sql.NullString) g.Node {
+	if !value.Valid {
+		return html.Td(g.Text("-"))
+	}
+	return html.Td(g.Text(value.String))
+}
+
+func TimestampSection(t time.Time, children ...g.Node) g.Node {
+	return html.Section(
+		append([]g.Node{html.Span(g.Text(t.Format(time.RFC3339)))}, children...)...,
+	)
 }

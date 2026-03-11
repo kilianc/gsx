@@ -137,6 +137,59 @@ func Page() Node {
 
 **Convention**: lowercase tags (`<div>`, `<span>`) are always HTML elements. Uppercase tags (`<Card>`, `<ui.Card>`) are always component function calls.
 
+### Typed props
+
+Components can accept **typed parameters** (not just `...Node` children). Attributes are mapped to function parameters by name:
+
+```go
+func SectionHeading(text string) Node {
+  return <h2>{text}</h2>
+}
+
+func Badge(text string, variant string) Node {
+  return <span class={"badge badge-" + variant}>{text}</span>
+}
+```
+
+Use them just like JSX props:
+
+```go
+<SectionHeading text="Debug" />
+<Badge text="Active" variant="success" />
+```
+
+This compiles to `SectionHeading("Debug")` and `Badge("Active", "success")`.
+
+Any Go type works as a prop — `time.Time`, `sql.NullString`, custom structs, pointers, slices, etc.:
+
+```go
+import "time"
+
+func CellTime(t time.Time) Node {
+  return <td>{t.Format(time.RFC3339)}</td>
+}
+```
+
+```go
+<CellTime t={row.CreatedAt} />
+// compiles to: CellTime(row.CreatedAt)
+```
+
+**Mixed props and children** work too — typed parameters come from attributes, `...Node` children come from the body:
+
+```go
+func SectionWithHeading(heading string, children ...Node) Node {
+  return <section><h2>{heading}</h2>{children}</section>
+}
+```
+
+```go
+<SectionWithHeading heading="Tasks">
+  <p>content here</p>
+</SectionWithHeading>
+// compiles to: SectionWithHeading("Tasks", P(Text("content here")))
+```
+
 ### Notes
 
 - Components are normal Go `func`s and must have an explicit `return ...`.
