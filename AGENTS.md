@@ -26,6 +26,14 @@ Examples:
 - `lsp: remove debug logging from proxy`
 - `extension: add .vscodeignore and build scripts`
 
+## New Features
+
+When shipping a new feature:
+
+1. **Write tests first** — add E2E fixtures (`.gsx`, `.gsx.out`, `.html.out`) and any needed helpers.
+2. **Update the README** — add usage examples under the relevant section.
+3. **Include examples in the PR** — the PR body should show before/after GSX snippets and the compiled Go output.
+
 ## Bug Reports
 
 When responding to a bug report, always follow this order:

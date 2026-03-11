@@ -477,6 +477,13 @@ func classifyParamType(expr goast.Expr, imports []*goast.ImportSpec) string {
 			}
 		}
 	}
+	// Fallback: format any Go type expression to a string so that functions
+	// with arbitrary param types (time.Time, sql.NullString, etc.) are
+	// recognized as typed components.
+	var buf bytes.Buffer
+	if err := format.Node(&buf, gotoken.NewFileSet(), expr); err == nil && buf.Len() > 0 {
+		return buf.String()
+	}
 	return ""
 }
 
