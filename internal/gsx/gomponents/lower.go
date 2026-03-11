@@ -97,6 +97,11 @@ func isLikelyNodeExpr(ex goast.Expr, ctx Context) bool {
 		if fun.Name == "" {
 			return false
 		}
+		if ctx.FuncReturnTypes != nil {
+			if typ, ok := ctx.FuncReturnTypes[fun.Name]; ok {
+				return typ == "Node"
+			}
+		}
 		return fun.Name[0] >= 'A' && fun.Name[0] <= 'Z'
 	case *goast.SelectorExpr:
 		xID, ok := fun.X.(*goast.Ident)
