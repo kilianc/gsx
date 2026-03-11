@@ -74,7 +74,7 @@ func lowerNode(n ast.Node, ctx Context) (goast.Expr, error) {
 
 		// If this looks like it produces a Node, splice it directly into children.
 		// This enables patterns like `{If(cond, <p>...</p>)}` and `{Group(nodes)}`.
-		if isLikelyNodeExpr(ex, ctx) {
+		if IsLikelyNodeExpr(ex, ctx) {
 			return ex, nil
 		}
 		// No implicit stringification: let the Go compiler surface a clear type error
@@ -87,7 +87,7 @@ func lowerNode(n ast.Node, ctx Context) (goast.Expr, error) {
 	}
 }
 
-func isLikelyNodeExpr(ex goast.Expr, ctx Context) bool {
+func IsLikelyNodeExpr(ex goast.Expr, ctx Context) bool {
 	call, ok := ex.(*goast.CallExpr)
 	if !ok {
 		return false
@@ -120,6 +120,25 @@ func isLikelyNodeExpr(ex goast.Expr, ctx Context) bool {
 	default:
 		return false
 	}
+}
+
+func IsExprStringish(e goast.Expr) bool {
+	if bl, ok := e.(*goast.BasicLit); ok && bl.Kind == gotoken.STRING {
+		return true
+	}
+	if ce, ok := e.(*goast.CallExpr); ok {
+		if sel, ok := ce.Fun.(*goast.SelectorExpr); ok {
+			if x, ok := sel.X.(*goast.Ident); ok && sel.Sel != nil {
+				switch {
+				case x.Name == "fmt" && sel.Sel.Name == "Sprintf":
+					return true
+				case x.Name == "strconv" && sel.Sel.Name == "Itoa":
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func IsKnownNonNodePkg(name string) bool {
@@ -222,7 +241,7 @@ func lowerAttr(a ast.Attr, ctx Context) (goast.Expr, error) {
 				}
 			}
 			// If it looks like it yields an attribute node (JoinAttrs/If/Class/etc), pass through.
-			if isLikelyNodeExpr(ex, ctx) {
+			if IsLikelyNodeExpr(ex, ctx) {
 				return ex, nil
 			}
 			// Default: treat as string expr and let Go typecheck it.
@@ -248,30 +267,14 @@ func lowerAttr(a ast.Attr, ctx Context) (goast.Expr, error) {
 }
 
 func lowerStringExpr(ex goast.Expr, ctx Context) (goast.Expr, bool) {
-	// identifier with known type
 	if id, ok := ex.(*goast.Ident); ok {
 		if t, ok := ctx.VarTypes[id.Name]; ok && t == "string" {
 			return id, true
 		}
 	}
-
-	// string literal
-	if bl, ok := ex.(*goast.BasicLit); ok && bl.Kind == gotoken.STRING {
+	if IsExprStringish(ex) {
 		return ex, true
 	}
-
-	// fmt.Sprintf(...) returns string
-	if ce, ok := ex.(*goast.CallExpr); ok {
-		if sel, ok := ce.Fun.(*goast.SelectorExpr); ok {
-			if x, ok := sel.X.(*goast.Ident); ok && x.Name == "fmt" && sel.Sel != nil {
-				switch sel.Sel.Name {
-				case "Sprintf":
-					return ex, true
-				}
-			}
-		}
-	}
-
 	return nil, false
 }
 

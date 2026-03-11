@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	"github.com/kilianc/gsx/internal/gsx/module"
 )
 
 func main() {
@@ -30,7 +32,7 @@ func main() {
 }
 
 func watchAndGenerate(interval time.Duration) error {
-	root, err := findModuleRoot(".")
+	root, err := module.FindModuleRoot(".")
 	if err != nil {
 		return err
 	}
@@ -64,22 +66,6 @@ func watchAndGenerate(interval time.Duration) error {
 	}
 }
 
-func findModuleRoot(start string) (string, error) {
-	d, err := filepath.Abs(start)
-	if err != nil {
-		return "", err
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(d, "go.mod")); err == nil {
-			return d, nil
-		}
-		parent := filepath.Dir(d)
-		if parent == d {
-			return "", fmt.Errorf("could not find go.mod above %s", start)
-		}
-		d = parent
-	}
-}
 
 func sha256Sum(b []byte) [32]byte {
 	// local tiny helper to avoid pulling in fsnotify; polling is enough for v0.

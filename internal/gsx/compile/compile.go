@@ -7,7 +7,6 @@ import (
 	"go/format"
 	"go/parser"
 	gotoken "go/token"
-	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/kilianc/gsx/internal/gsx/ast"
 	"github.com/kilianc/gsx/internal/gsx/gomponents"
+	"github.com/kilianc/gsx/internal/gsx/module"
 )
 
 const (
@@ -25,9 +25,14 @@ const (
 
 const maxSingleLineCallLen = 80
 
-// CompileFile compiles a Go-first .gsx source (a Go file with embedded `<tag>` expressions)
-// into a gofmt'd Go source file.
-func CompileFile(path string, src []byte) ([]byte, error) {
+type compileResult struct {
+	fset     *gotoken.FileSet
+	af       *goast.File
+	mapping  []placeholder
+	rewritten []byte
+}
+
+func compilePipeline(path string, src []byte) (*compileResult, error) {
 	rewritten, mapping, err := rewriteTagsToPlaceholders(src)
 	if err != nil {
 		return nil, err
@@ -40,24 +45,19 @@ func CompileFile(path string, src []byte) ([]byte, error) {
 		return nil, fmt.Errorf("%w\n\n-- rewritten preview --\n%s", err, previewLines(string(rewritten), 80))
 	}
 
-	// Resolve imported function return types for accurate Node/string classification.
 	funcReturnTypes := resolveImportedFuncTypes(af)
 	if funcReturnTypes == nil {
 		funcReturnTypes = map[string]string{}
 	}
-
-	// Collect local (same-file) function return types including unexported functions.
 	for name, typ := range collectLocalFuncReturnTypes(af) {
 		funcReturnTypes[name] = typ
 	}
 
-	// Infer which locals are Nodes (defined from GSX placeholders) so `{ident}` splicing works.
 	ctx := gomponents.Context{
 		VarTypes:        inferVarTypesFromPlaceholders(af, mapping, funcReturnTypes),
 		FuncReturnTypes: funcReturnTypes,
 	}
 
-	// Lower placeholders now that we have context.
 	for i := range mapping {
 		ex, err := gomponents.LowerNodes([]ast.Node{mapping[i].node}, ctx)
 		if err != nil {
@@ -67,11 +67,21 @@ func CompileFile(path string, src []byte) ([]byte, error) {
 		mapping[i].expr = ex
 	}
 
-	// Ensure required imports.
-	ensureImports(af, mapping)
+	return &compileResult{fset: fset, af: af, mapping: mapping, rewritten: rewritten}, nil
+}
+
+// CompileFile compiles a Go-first .gsx source (a Go file with embedded `<tag>` expressions)
+// into a gofmt'd Go source file.
+func CompileFile(path string, src []byte) ([]byte, error) {
+	cr, err := compilePipeline(path, src)
+	if err != nil {
+		return nil, err
+	}
+
+	ensureImports(cr.af, cr.mapping)
 
 	var buf bytes.Buffer
-	if err := format.Node(&buf, fset, af); err != nil {
+	if err := format.Node(&buf, cr.fset, cr.af); err != nil {
 		return nil, err
 	}
 
@@ -80,7 +90,7 @@ func CompileFile(path string, src []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	pretty, err := substitutePlaceholdersWithPrettyExprs(string(gofmted), mapping, maxSingleLineCallLen)
+	pretty, err := substitutePlaceholdersWithPrettyExprs(string(gofmted), cr.mapping, maxSingleLineCallLen)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +101,6 @@ func CompileFile(path string, src []byte) ([]byte, error) {
 	out = append(out, []byte(formatImportGroups(pretty))...)
 	final, err := format.Source(out)
 	if err != nil {
-		// If gofmt fails here, still return a useful error with the raw output.
 		return nil, fmt.Errorf("gofmt final: %w\n\n-- output preview --\n%s", err, previewLines(string(out), 120))
 	}
 	return final, nil
@@ -106,59 +115,30 @@ func CompileFile(path string, src []byte) ([]byte, error) {
 // It also returns the rewritten Go-ish source (tags -> placeholders) to help higher layers build
 // best-effort mappings back to the original .gsx file.
 func CompileFileForLSP(path string, src []byte) (goSrc []byte, sm *SourceMap, err error) {
-	rewrittenBytes, mapping, err := rewriteTagsToPlaceholders(src)
+	cr, err := compilePipeline(path, src)
 	if err != nil {
 		return nil, nil, err
 	}
-	rewrittenBytes = normalizeParenWrappedPlaceholder(rewrittenBytes)
-	rewritten := string(rewrittenBytes)
+
+	rewritten := string(cr.rewritten)
+	mapping := cr.mapping
+
 	// normalizeParenWrappedPlaceholder may remove lines and change the positions of placeholder calls.
 	// Re-index placeholder target positions so we can safely apply inline expansions.
 	if mapping, err = reindexPlaceholderTargets(rewritten, mapping); err != nil {
 		return nil, nil, err
 	}
 
-	fset := gotoken.NewFileSet()
-	af, err := parser.ParseFile(fset, path+".go", rewrittenBytes, parser.ParseComments)
-	if err != nil {
-		return nil, nil, fmt.Errorf("%w\n\n-- rewritten preview --\n%s", err, previewLines(string(rewrittenBytes), 80))
-	}
-
-	// Resolve imported function return types for accurate Node/string classification.
-	funcReturnTypes := resolveImportedFuncTypes(af)
-	if funcReturnTypes == nil {
-		funcReturnTypes = map[string]string{}
-	}
-
-	// Collect local (same-file) function return types including unexported functions.
-	for name, typ := range collectLocalFuncReturnTypes(af) {
-		funcReturnTypes[name] = typ
-	}
-
-	// Infer which locals are Nodes (defined from GSX placeholders) so `{ident}` splicing works.
-	ctx := gomponents.Context{
-		VarTypes:        inferVarTypesFromPlaceholders(af, mapping, funcReturnTypes),
-		FuncReturnTypes: funcReturnTypes,
-	}
-
-	// Lower placeholders now that we have context.
 	loweredExprs := map[string]string{}
 	for i := range mapping {
-		ex, err := gomponents.LowerNodes([]ast.Node{mapping[i].node}, ctx)
-		if err != nil {
-			return nil, nil, err
-		}
-		clearTokenPos(ex)
-		mapping[i].expr = ex
-		loweredExprs[mapping[i].name] = formatExpr(ex)
+		loweredExprs[mapping[i].name] = formatExpr(mapping[i].expr)
 	}
 
 	// Apply minimal import edits and inline placeholder expansions to produce a gopls-friendly Go view.
 	req := detectRequiredImports(mapping, mapsToSlice(loweredExprs))
 	impRes := applyImportEdits(rewritten, req)
 
-	// When we changed imports, all subsequent placeholder offsets shift. Map placeholder tgtStart/tgtEnd accordingly.
-	// We do this by mapping offsets from rewritten -> afterImports using the import mapper.
+	// When we changed imports, all subsequent placeholder offsets shift.
 	afterImports := impRes.out
 	adjusted := make([]placeholder, len(mapping))
 	for i := range mapping {
@@ -221,7 +201,7 @@ func mapsToSlice(m map[string]string) []string {
 }
 
 func resolveImportedFuncTypes(f *goast.File) map[string]string {
-	modPath, modRoot := findModuleInfo()
+	modPath, modRoot := module.FindModuleInfo()
 	if modPath == "" {
 		return nil
 	}
@@ -248,30 +228,6 @@ func resolveImportedFuncTypes(f *goast.File) map[string]string {
 	return result
 }
 
-func findModuleInfo() (modPath string, modRoot string) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", ""
-	}
-	for {
-		gomod := filepath.Join(dir, "go.mod")
-		data, err := os.ReadFile(gomod)
-		if err == nil {
-			for _, line := range strings.Split(string(data), "\n") {
-				line = strings.TrimSpace(line)
-				if strings.HasPrefix(line, "module ") {
-					return strings.TrimSpace(strings.TrimPrefix(line, "module")), dir
-				}
-			}
-			return "", ""
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", ""
-		}
-		dir = parent
-	}
-}
 
 func parseFuncReturnTypesFromDir(dir string) map[string]string {
 	fset := gotoken.NewFileSet()
@@ -371,6 +327,30 @@ func resolveSelectorCallType(e goast.Expr, funcReturnTypes map[string]string) st
 	return ""
 }
 
+func inferRHSType(rhs goast.Expr, phNames map[string]bool, funcReturnTypes map[string]string) string {
+	ce, isCall := rhs.(*goast.CallExpr)
+	if isCall {
+		if id, ok := ce.Fun.(*goast.Ident); ok {
+			if phNames[id.Name] && len(ce.Args) == 0 {
+				return "Node"
+			}
+			if typ, ok := funcReturnTypes[id.Name]; ok {
+				return typ
+			}
+		}
+	}
+	if resolved := resolveSelectorCallType(rhs, funcReturnTypes); resolved != "" {
+		return resolved
+	}
+	if gomponents.IsExprStringish(rhs) {
+		return "string"
+	}
+	if gomponents.IsLikelyNodeExpr(rhs, gomponents.Context{FuncReturnTypes: funcReturnTypes}) {
+		return "Node"
+	}
+	return ""
+}
+
 func inferVarTypesFromPlaceholders(f *goast.File, phs []placeholder, funcReturnTypes map[string]string) map[string]string {
 	phNames := map[string]bool{}
 	for _, p := range phs {
@@ -408,91 +388,27 @@ func inferVarTypesFromPlaceholders(f *goast.File, phs []placeholder, funcReturnT
 				}
 			}
 		case *goast.AssignStmt:
-			// x := __gsx_expr_1()
 			for i := range t.Rhs {
-				ce, isCall := t.Rhs[i].(*goast.CallExpr)
 				if i < len(t.Lhs) {
 					if lhsID, ok := t.Lhs[i].(*goast.Ident); ok {
-						// Node assignment from placeholder call.
-						if isCall {
-							id, ok2 := ce.Fun.(*goast.Ident)
-							if ok2 && phNames[id.Name] && len(ce.Args) == 0 {
-								out[lhsID.Name] = "Node"
-								continue
-							}
-						}
-						// Resolved return type from imported function signature.
-						if resolved := resolveSelectorCallType(t.Rhs[i], funcReturnTypes); resolved != "" {
-							out[lhsID.Name] = resolved
-							continue
-						}
-						// Resolved return type from local function signature.
-						if isCall {
-							if id, ok2 := ce.Fun.(*goast.Ident); ok2 {
-								if typ, ok2 := funcReturnTypes[id.Name]; ok2 {
-									out[lhsID.Name] = typ
-									continue
-								}
-							}
-						}
-						// Simple string inference.
-						if isExprStringish(t.Rhs[i]) {
-							out[lhsID.Name] = "string"
-							continue
-						}
-						// Node inference from calls that likely return Node.
-						if isExprNodeish(t.Rhs[i]) {
-							out[lhsID.Name] = "Node"
-							continue
+						if typ := inferRHSType(t.Rhs[i], phNames, funcReturnTypes); typ != "" {
+							out[lhsID.Name] = typ
 						}
 					}
 				}
 			}
 		case *goast.ValueSpec:
-			// Respect explicit types, e.g. `var lis []Node` so `{lis}` can splice as children.
 			if t.Type != nil {
-				typ := typeString(t.Type)
-				if typ != "" {
+				if typ := typeString(t.Type); typ != "" {
 					for _, nm := range t.Names {
 						out[nm.Name] = typ
 					}
 				}
 			}
-			// var x = __gsx_expr_1()
 			for i := range t.Values {
-				ce, isCall := t.Values[i].(*goast.CallExpr)
 				if i < len(t.Names) {
-					// Node assignment from placeholder call.
-					if isCall {
-						id, ok2 := ce.Fun.(*goast.Ident)
-						if ok2 && phNames[id.Name] && len(ce.Args) == 0 {
-							out[t.Names[i].Name] = "Node"
-							continue
-						}
-					}
-					// Resolved return type from imported function signature.
-					if resolved := resolveSelectorCallType(t.Values[i], funcReturnTypes); resolved != "" {
-						out[t.Names[i].Name] = resolved
-						continue
-					}
-					// Resolved return type from local function signature.
-					if isCall {
-						if id, ok2 := ce.Fun.(*goast.Ident); ok2 {
-							if typ, ok2 := funcReturnTypes[id.Name]; ok2 {
-								out[t.Names[i].Name] = typ
-								continue
-							}
-						}
-					}
-					// Simple string inference.
-					if isExprStringish(t.Values[i]) {
-						out[t.Names[i].Name] = "string"
-						continue
-					}
-					// Node inference from calls that likely return Node.
-					if isExprNodeish(t.Values[i]) {
-						out[t.Names[i].Name] = "Node"
-						continue
+					if typ := inferRHSType(t.Values[i], phNames, funcReturnTypes); typ != "" {
+						out[t.Names[i].Name] = typ
 					}
 				}
 			}
@@ -575,52 +491,6 @@ func identName(t goast.Expr) string {
 	return ""
 }
 
-func isExprStringish(e goast.Expr) bool {
-	// string literal
-	if bl, ok := e.(*goast.BasicLit); ok && bl.Kind == gotoken.STRING {
-		return true
-	}
-	// fmt.Sprintf(...)
-	if ce, ok := e.(*goast.CallExpr); ok {
-		if sel, ok := ce.Fun.(*goast.SelectorExpr); ok {
-			if x, ok := sel.X.(*goast.Ident); ok && x.Name == "fmt" && sel.Sel != nil && sel.Sel.Name == "Sprintf" {
-				return true
-			}
-		}
-		// strconv.Itoa(...)
-		if sel, ok := ce.Fun.(*goast.SelectorExpr); ok {
-			if x, ok := sel.X.(*goast.Ident); ok && x.Name == "strconv" && sel.Sel != nil && sel.Sel.Name == "Itoa" {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func isExprNodeish(e goast.Expr) bool {
-	ce, ok := e.(*goast.CallExpr)
-	if !ok {
-		return false
-	}
-	switch fun := ce.Fun.(type) {
-	case *goast.Ident:
-		if fun.Name == "" {
-			return false
-		}
-		return fun.Name[0] >= 'A' && fun.Name[0] <= 'Z'
-	case *goast.SelectorExpr:
-		xID, ok := fun.X.(*goast.Ident)
-		if !ok {
-			return false
-		}
-		if gomponents.IsKnownNonNodePkg(xID.Name) {
-			return false
-		}
-		return true
-	default:
-		return false
-	}
-}
 
 func normalizeParenWrappedPlaceholder(src []byte) []byte {
 	// The Go parser doesn't accept some "paren-wrapped expression" forms the way people expect,
@@ -753,8 +623,16 @@ func ensureImports(f *goast.File, phs []placeholder) {
 	// We always need dot imports for gomponents + html when any tags exist.
 	needsTags := len(phs) > 0
 
-	needsFmt := fileUsesPkgSelector(f, "fmt") || anyPlaceholderUsesPkgSelector(phs, "fmt")
-	needsComponents := fileUsesIdent(f, "JoinAttrs") || fileUsesIdent(f, "Classes") || anyPlaceholderUsesIdent(phs, "JoinAttrs") || anyPlaceholderUsesIdent(phs, "Classes")
+	needsFmt := usesPkgSelector(f, "fmt")
+	needsComponents := usesIdent(f, "JoinAttrs") || usesIdent(f, "Classes")
+	for _, p := range phs {
+		if !needsFmt && usesPkgSelector(p.expr, "fmt") {
+			needsFmt = true
+		}
+		if !needsComponents && (usesIdent(p.expr, "JoinAttrs") || usesIdent(p.expr, "Classes")) {
+			needsComponents = true
+		}
+	}
 
 	// Drop any existing imports of these paths; we'll re-add with dot import as needed.
 	drop := map[string]bool{
@@ -873,52 +751,30 @@ func ensureImports(f *goast.File, phs []placeholder) {
 	}
 }
 
-func anyPlaceholderUsesPkgSelector(phs []placeholder, pkg string) bool {
-	for _, p := range phs {
-		if exprUsesPkgSelector(p.expr, pkg) {
-			return true
-		}
-	}
-	return false
-}
-
-func anyPlaceholderUsesIdent(phs []placeholder, name string) bool {
-	for _, p := range phs {
-		if exprUsesIdent(p.expr, name) {
-			return true
-		}
-	}
-	return false
-}
-
-func exprUsesPkgSelector(e goast.Expr, pkg string) bool {
+func usesPkgSelector(node goast.Node, pkg string) bool {
 	found := false
-	goast.Inspect(e, func(n goast.Node) bool {
+	goast.Inspect(node, func(n goast.Node) bool {
 		if found || n == nil {
 			return false
 		}
-		sel, ok := n.(*goast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		id, ok := sel.X.(*goast.Ident)
-		if ok && id.Name == pkg {
-			found = true
-			return false
+		if sel, ok := n.(*goast.SelectorExpr); ok {
+			if id, ok := sel.X.(*goast.Ident); ok && id.Name == pkg {
+				found = true
+				return false
+			}
 		}
 		return true
 	})
 	return found
 }
 
-func exprUsesIdent(e goast.Expr, name string) bool {
+func usesIdent(node goast.Node, name string) bool {
 	found := false
-	goast.Inspect(e, func(n goast.Node) bool {
+	goast.Inspect(node, func(n goast.Node) bool {
 		if found || n == nil {
 			return false
 		}
-		id, ok := n.(*goast.Ident)
-		if ok && id.Name == name {
+		if id, ok := n.(*goast.Ident); ok && id.Name == name {
 			found = true
 			return false
 		}
@@ -1116,37 +972,6 @@ func isStdImportPath(path string) bool {
 	return !strings.Contains(seg, ".")
 }
 
-func fileUsesPkgSelector(f *goast.File, pkg string) bool {
-	found := false
-	goast.Inspect(f, func(n goast.Node) bool {
-		if found || n == nil {
-			return false
-		}
-		if sel, ok := n.(*goast.SelectorExpr); ok {
-			if id, ok := sel.X.(*goast.Ident); ok && id.Name == pkg {
-				found = true
-				return false
-			}
-		}
-		return true
-	})
-	return found
-}
-
-func fileUsesIdent(f *goast.File, name string) bool {
-	found := false
-	goast.Inspect(f, func(n goast.Node) bool {
-		if found || n == nil {
-			return false
-		}
-		if id, ok := n.(*goast.Ident); ok && id.Name == name {
-			found = true
-			return false
-		}
-		return true
-	})
-	return found
-}
 
 // --- scanner + GSX tag parsing (subset of previous GSX v0) ---
 
