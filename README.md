@@ -109,7 +109,35 @@ This writes `file.gsx.go` next to each `file.gsx`.
   - Child `{expr}` must be a `string`, a `Node`, or a `[]Node` (slices are auto-wrapped as `Group(slice)`).
   - Attribute expressions must typecheck as expected by gomponents helpers (e.g. `class={s}` becomes `Class(s)`).
 
-Notes:
+### Components
+
+Like JSX, **uppercase tags** invoke Go functions instead of emitting HTML elements:
+
+```go
+func Card(children ...Node) Node {
+  return <div class="card">{children}</div>
+}
+
+func Page() Node {
+  return <Card class="primary"><p>Hello</p></Card>
+}
+```
+
+This generates `Card(Class("primary"), P(Text("Hello")))` — attributes and children are passed as `...Node` arguments, the same way gomponents HTML helpers work.
+
+**Dotted tags** call qualified functions from imported packages:
+
+```go
+import "myapp/ui"
+
+func Page() Node {
+  return <ui.Card><p>Hello</p></ui.Card>
+}
+```
+
+**Convention**: lowercase tags (`<div>`, `<span>`) are always HTML elements. Uppercase tags (`<Card>`, `<ui.Card>`) are always component function calls.
+
+### Notes
 
 - Components are normal Go `func`s and must have an explicit `return ...`.
 - You can’t place two sibling tag expressions adjacent in one Go expression; wrap them in a parent tag (e.g. `return <div>{a}{b}</div>`).
