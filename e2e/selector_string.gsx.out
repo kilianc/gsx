@@ -7,7 +7,7 @@ import (
 	"github.com/kilianc/gsx/e2e/helpers"
 
 	. "maragu.dev/gomponents"
-	. "maragu.dev/gomponents/html"
+	html "maragu.dev/gomponents/html"
 )
 
 func SelectorString() Node {
@@ -17,9 +17,9 @@ func SelectorString() Node {
 	// non-stdlib selector returning Node — must NOT be wrapped
 	child := helpers.MakeNode("world")
 
-	return Div(
-		Span(Text(label)),
-		Span(Text(helpers.MakeString("inline"))),
+	return html.Div(
+		html.Span(Text(label)),
+		html.Span(Text(helpers.MakeString("inline"))),
 		child,
 		helpers.MakeNode("direct"),
 	)

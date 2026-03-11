@@ -6,7 +6,7 @@ package e2e
 import (
 	. "maragu.dev/gomponents"
 
-	. "maragu.dev/gomponents/html"
+	html "maragu.dev/gomponents/html"
 
 	"strconv"
 )
@@ -18,10 +18,10 @@ func init() {
 }
 
 func ConditionalAttrs(disabled bool, required bool, showID bool, id int) Node {
-	return Form(
-		Input(
-			If(disabled, Disabled()),
-			If(required, Required()),
+	return html.Form(
+		html.Input(
+			If(disabled, html.Disabled()),
+			If(required, html.Required()),
 			If(showID, Attr("data-id", strconv.Itoa(id))),
 		),
 	)

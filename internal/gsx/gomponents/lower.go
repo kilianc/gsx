@@ -64,6 +64,7 @@ func lowerNode(n ast.Node, ctx Context) (goast.Expr, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid expression %q: %w", t.Src, err)
 		}
+		ex = ctx.qualifyHTMLInExpr(ex)
 
 		// If this is a local identifier and we know it is a Node, splice it as-is.
 		if id, ok := ex.(*goast.Ident); ok {
@@ -258,7 +259,7 @@ func lowerTypedComponent(el ast.Element, fun goast.Expr, params []FuncParam, ctx
 			if err != nil {
 				return nil, err
 			}
-			positional[idx] = val
+			positional[idx] = ctx.qualifyHTMLInExpr(val)
 			used[idx] = true
 		} else if hasVariadic {
 			ax, err := lowerAttr(a, ctx)
@@ -319,6 +320,7 @@ func lowerAttr(a ast.Attr, ctx Context) (goast.Expr, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid attribute expression %q: %w", a.Value, err)
 		}
+		ex = ctx.qualifyHTMLInExpr(ex)
 
 		// Attribute-node injection: `{expr}` in a start tag is represented as an AttrExpr with empty Key.
 		// Treat it as already-producing an attribute Node.
@@ -396,6 +398,146 @@ func call(fun goast.Expr, args ...goast.Expr) *goast.CallExpr {
 func strLit(s string) goast.Expr {
 	return &goast.BasicLit{Kind: gotoken.STRING, Value: fmt.Sprintf("%q", s)}
 }
+
+// qualifyHTMLInExpr walks a user-parsed Go expression and replaces bare
+// identifiers that are known gomponents/html exports with html-qualified
+// selector expressions (e.g. Class → html.Class).
+func (ctx Context) qualifyHTMLInExpr(expr goast.Expr) goast.Expr {
+	if ctx.HTMLPrefix == "" {
+		return expr
+	}
+	return qualifyHTMLWalk(expr, ctx.HTMLPrefix)
+}
+
+func qualifyHTMLWalk(expr goast.Expr, prefix string) goast.Expr {
+	if expr == nil {
+		return nil
+	}
+	switch e := expr.(type) {
+	case *goast.Ident:
+		if htmlExports[e.Name] {
+			return &goast.SelectorExpr{
+				X:   goast.NewIdent(prefix),
+				Sel: goast.NewIdent(e.Name),
+			}
+		}
+	case *goast.CallExpr:
+		e.Fun = qualifyHTMLWalk(e.Fun, prefix)
+		for i, arg := range e.Args {
+			e.Args[i] = qualifyHTMLWalk(arg, prefix)
+		}
+	case *goast.CompositeLit:
+		for i, elt := range e.Elts {
+			e.Elts[i] = qualifyHTMLWalk(elt, prefix)
+		}
+	case *goast.KeyValueExpr:
+		e.Value = qualifyHTMLWalk(e.Value, prefix)
+	case *goast.ParenExpr:
+		e.X = qualifyHTMLWalk(e.X, prefix)
+	case *goast.UnaryExpr:
+		e.X = qualifyHTMLWalk(e.X, prefix)
+	case *goast.BinaryExpr:
+		e.X = qualifyHTMLWalk(e.X, prefix)
+		e.Y = qualifyHTMLWalk(e.Y, prefix)
+	case *goast.IndexExpr:
+		e.X = qualifyHTMLWalk(e.X, prefix)
+		e.Index = qualifyHTMLWalk(e.Index, prefix)
+	case *goast.SliceExpr:
+		e.X = qualifyHTMLWalk(e.X, prefix)
+	case *goast.FuncLit:
+		qualifyHTMLWalkStmts(e.Body.List, prefix)
+	}
+	return expr
+}
+
+func qualifyHTMLWalkStmts(stmts []goast.Stmt, prefix string) {
+	for _, s := range stmts {
+		switch st := s.(type) {
+		case *goast.ReturnStmt:
+			for i, r := range st.Results {
+				st.Results[i] = qualifyHTMLWalk(r, prefix)
+			}
+		case *goast.ExprStmt:
+			st.X = qualifyHTMLWalk(st.X, prefix)
+		case *goast.AssignStmt:
+			for i, r := range st.Rhs {
+				st.Rhs[i] = qualifyHTMLWalk(r, prefix)
+			}
+		case *goast.BlockStmt:
+			qualifyHTMLWalkStmts(st.List, prefix)
+		case *goast.IfStmt:
+			if st.Body != nil {
+				qualifyHTMLWalkStmts(st.Body.List, prefix)
+			}
+			if st.Else != nil {
+				if b, ok := st.Else.(*goast.BlockStmt); ok {
+					qualifyHTMLWalkStmts(b.List, prefix)
+				}
+			}
+		}
+	}
+}
+
+// htmlExports is the set of all exported identifiers from maragu.dev/gomponents/html.
+var htmlExports = func() map[string]bool {
+	names := []string{
+		// Elements
+		"A", "Abbr", "Address", "Area", "Article", "Aside", "Audio",
+		"B", "Base", "BlockQuote", "Body", "Br", "Button",
+		"Canvas", "Caption", "Cite", "CiteEl", "Code", "Col", "ColGroup",
+		"Data", "DataEl", "DataList", "Dd", "Del", "Details", "Dfn", "Dialog", "Div", "Dl", "Doctype", "Dt",
+		"Em", "Embed",
+		"FieldSet", "FigCaption", "Figure", "Footer", "Form", "FormEl",
+		"H1", "H2", "H3", "H4", "H5", "H6", "HGroup", "HTML", "Head", "Header", "Hr",
+		"I", "IFrame", "Img", "Input", "Ins",
+		"Kbd",
+		"Label", "LabelEl", "Legend", "Li", "Link",
+		"Main", "Mark", "Menu", "Meta", "Meter",
+		"Nav", "NoScript",
+		"Object", "Ol", "OptGroup", "Option",
+		"P", "Param", "Picture", "Pre", "Progress",
+		"Q",
+		"S", "Samp", "Script", "Search", "Section", "Select", "SlotEl", "Small", "Source", "Span", "Strong", "StyleEl", "Sub", "Summary", "Sup", "SVG",
+		"Table", "TBody", "Td", "Template", "Textarea", "TFoot", "Th", "THead", "Time", "Title", "TitleEl", "Tr",
+		"U", "Ul",
+		"Var", "Video", "Wbr",
+
+		// String attributes
+		"Accept", "Action", "Alt", "Aria", "As", "AutoComplete",
+		"Charset", "CiteAttr", "Class", "ColSpan", "Cols", "Content", "CrossOrigin",
+		"DataAttr", "DateTime", "Dir", "Download", "Draggable",
+		"EncType",
+		"For", "FormAction", "FormAttr", "FormEncType", "FormMethod", "FormTarget",
+		"Height", "Hidden", "Href",
+		"ID", "Integrity",
+		"LabelAttr", "Lang", "List", "Loading", "Loop",
+		"Max", "MaxLength", "Method", "Min", "MinLength",
+		"Name",
+		"Pattern", "Placeholder", "Popover", "PopoverTarget", "PopoverTargetAction", "Poster", "Preload",
+		"ReferrerPolicy", "Rel", "Role", "RowSpan", "Rows",
+		"Scope", "SlotAttr", "Src", "SrcSet", "Step", "Style", "StyleAttr",
+		"TabIndex", "Target", "TitleAttr", "Type",
+		"Value",
+		"Width",
+
+		// Boolean attributes
+		"Async", "AutoFocus", "AutoPlay",
+		"Checked", "Controls",
+		"Defer", "Disabled",
+		"FormNoValidate",
+		"Multiple", "Muted",
+		"NoValidate",
+		"Open",
+		"PlaysInline",
+		"ReadOnly", "Required",
+		"Selected",
+	}
+	m := make(map[string]bool, len(names))
+	for _, n := range names {
+		m[n] = true
+	}
+	return m
+}()
 
 func htmlElementFunc(tag string) string {
 	switch tag {

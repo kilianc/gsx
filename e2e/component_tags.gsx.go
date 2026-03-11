@@ -7,7 +7,7 @@ import (
 	"github.com/kilianc/gsx/e2e/helpers"
 
 	. "maragu.dev/gomponents"
-	. "maragu.dev/gomponents/html"
+	html "maragu.dev/gomponents/html"
 )
 
 func init() {
@@ -17,13 +17,13 @@ func init() {
 }
 
 func Card(children ...Node) Node {
-	return Div(Class("card"), Group(children))
+	return html.Div(html.Class("card"), Group(children))
 }
 
 func ComponentTags() Node {
-	return Div(
-		Card(Class("primary"), P(Text("hello"))),
+	return html.Div(
+		Card(html.Class("primary"), html.P(Text("hello"))),
 		Card(),
-		helpers.Wrapper(Span(Text("wrapped"))),
+		helpers.Wrapper(html.Span(Text("wrapped"))),
 	)
 }

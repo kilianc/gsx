@@ -6,13 +6,13 @@ package e2e
 import (
 	. "maragu.dev/gomponents"
 
-	. "maragu.dev/gomponents/html"
+	html "maragu.dev/gomponents/html"
 )
 
 func init() {
 	GSXFunctions["struct_fields"] = func() Node {
 		return StructFields(PageData{
-			Title: H1(Text("hello")),
+			Title: html.H1(Text("hello")),
 		})
 	}
 }
@@ -22,5 +22,5 @@ type PageData struct {
 }
 
 func StructFields(d PageData) Node {
-	return Div(d.Title)
+	return html.Div(d.Title)
 }
