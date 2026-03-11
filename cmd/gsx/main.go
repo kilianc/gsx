@@ -13,6 +13,7 @@ import (
 
 	"github.com/kilianc/gsx/internal/gsx/compile"
 	"github.com/kilianc/gsx/internal/gsx/lsp"
+	"github.com/kilianc/gsx/internal/gsx/module"
 	"github.com/kilianc/gsx/internal/gsx/outfile"
 )
 
@@ -47,7 +48,7 @@ func main() {
 	}
 	root := *rootFlag
 	if root == "" {
-		root, err = findModuleRoot(cwd)
+		root, err = module.FindModuleRoot(cwd)
 		if err != nil {
 			fatal(err)
 		}
@@ -129,19 +130,6 @@ func fatal(err error) {
 	os.Exit(1)
 }
 
-func findModuleRoot(start string) (string, error) {
-	d := start
-	for {
-		if _, err := os.Stat(filepath.Join(d, "go.mod")); err == nil {
-			return d, nil
-		}
-		parent := filepath.Dir(d)
-		if parent == d {
-			return "", fmt.Errorf("could not find go.mod above %s", start)
-		}
-		d = parent
-	}
-}
 
 func discoverGSX(root string) (map[string][]string, error) {
 	out := map[string][]string{}
