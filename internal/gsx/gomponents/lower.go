@@ -10,9 +10,27 @@ import (
 	"github.com/kilianc/gsx/internal/gsx/ast"
 )
 
+type FuncParam struct {
+	Name     string
+	Type     string // "string", "bool", "int", "Node", etc.
+	Variadic bool
+}
+
 type Context struct {
-	VarTypes        map[string]string // Go type strings, e.g. "string", "[]string", "Node"
-	FuncReturnTypes map[string]string // "pkg.Func" → "string" | "Node", resolved via go/importer
+	VarTypes        map[string]string      // Go type strings, e.g. "string", "[]string", "Node"
+	FuncReturnTypes map[string]string      // "pkg.Func" → "string" | "Node", resolved via go/importer
+	FuncParams      map[string][]FuncParam // "pkg.Func" → ordered param list
+	HTMLPrefix      string                 // when non-empty, qualify gomponents/html calls (e.g. "html")
+}
+
+func (ctx Context) htmlIdent(name string) goast.Expr {
+	if ctx.HTMLPrefix != "" {
+		return &goast.SelectorExpr{
+			X:   goast.NewIdent(ctx.HTMLPrefix),
+			Sel: goast.NewIdent(name),
+		}
+	}
+	return goast.NewIdent(name)
 }
 
 // LowerNodes lowers a list of GSX nodes to a single Go expression that evaluates to Node.
@@ -152,9 +170,25 @@ func IsKnownNonNodePkg(name string) bool {
 }
 
 func lowerElement(el ast.Element, ctx Context) (goast.Expr, error) {
+	// Components with typed params (not pure ...Node) use named-param mapping
+	// instead of wrapping attribute values in Attr()/Class()/etc.
+	if ctx.FuncParams != nil {
+		if params, ok := ctx.FuncParams[el.Tag]; ok && hasTypedParams(params) {
+			var fun goast.Expr
+			if dot := strings.IndexByte(el.Tag, '.'); dot >= 0 {
+				fun = &goast.SelectorExpr{
+					X:   goast.NewIdent(el.Tag[:dot]),
+					Sel: goast.NewIdent(el.Tag[dot+1:]),
+				}
+			} else {
+				fun = goast.NewIdent(el.Tag)
+			}
+			return lowerTypedComponent(el, fun, params, ctx)
+		}
+	}
+
 	var args []goast.Expr
 
-	// attrs first
 	for _, a := range el.Attrs {
 		ax, err := lowerAttr(a, ctx)
 		if err != nil {
@@ -162,7 +196,6 @@ func lowerElement(el ast.Element, ctx Context) (goast.Expr, error) {
 		}
 		args = append(args, ax)
 	}
-	// then children
 	for _, c := range el.Children {
 		cx, err := lowerNode(c, ctx)
 		if err != nil {
@@ -171,8 +204,6 @@ func lowerElement(el ast.Element, ctx Context) (goast.Expr, error) {
 		args = append(args, cx)
 	}
 
-	// Uppercase tag → component function call (JSX convention).
-	// Dotted tags like <pkg.Card> become qualified calls (pkg.Card(...)).
 	if dot := strings.IndexByte(el.Tag, '.'); dot >= 0 {
 		fun := &goast.SelectorExpr{
 			X:   goast.NewIdent(el.Tag[:dot]),
@@ -185,22 +216,102 @@ func lowerElement(el ast.Element, ctx Context) (goast.Expr, error) {
 	}
 
 	if fn := htmlElementFunc(el.Tag); fn != "" {
-		return call(goast.NewIdent(fn), args...), nil
+		return call(ctx.htmlIdent(fn), args...), nil
 	}
 	allArgs := append([]goast.Expr{strLit(el.Tag)}, args...)
 	return call(goast.NewIdent("El"), allArgs...), nil
+}
+
+// hasTypedParams reports whether the param list contains any non-Node types,
+// meaning the function expects typed arguments rather than variadic Node children.
+func hasTypedParams(params []FuncParam) bool {
+	for _, p := range params {
+		if p.Type != "Node" && p.Type != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// lowerTypedComponent handles components whose function signature has typed parameters.
+// Attributes are mapped to positional arguments by matching param names.
+// Any unmatched attributes and all children are passed to a trailing variadic ...Node param.
+func lowerTypedComponent(el ast.Element, fun goast.Expr, params []FuncParam, ctx Context) (goast.Expr, error) {
+	hasVariadic := len(params) > 0 && params[len(params)-1].Variadic
+	namedParams := params
+	if hasVariadic {
+		namedParams = params[:len(params)-1]
+	}
+
+	paramIdx := map[string]int{}
+	for i, p := range namedParams {
+		paramIdx[p.Name] = i
+	}
+
+	positional := make([]goast.Expr, len(namedParams))
+	used := make([]bool, len(namedParams))
+	var variadicArgs []goast.Expr
+
+	for _, a := range el.Attrs {
+		if idx, ok := paramIdx[a.Key]; ok {
+			val, err := lowerAttrValue(a)
+			if err != nil {
+				return nil, err
+			}
+			positional[idx] = val
+			used[idx] = true
+		} else if hasVariadic {
+			ax, err := lowerAttr(a, ctx)
+			if err != nil {
+				return nil, err
+			}
+			variadicArgs = append(variadicArgs, ax)
+		}
+	}
+
+	for _, c := range el.Children {
+		cx, err := lowerNode(c, ctx)
+		if err != nil {
+			return nil, err
+		}
+		variadicArgs = append(variadicArgs, cx)
+	}
+
+	var args []goast.Expr
+	for i := range namedParams {
+		if used[i] {
+			args = append(args, positional[i])
+		}
+	}
+	args = append(args, variadicArgs...)
+
+	return call(fun, args...), nil
+}
+
+// lowerAttrValue converts an attribute to a raw Go expression (not wrapped in Attr/Class/etc).
+func lowerAttrValue(a ast.Attr) (goast.Expr, error) {
+	switch a.Kind {
+	case ast.AttrBool:
+		return goast.NewIdent("true"), nil
+	case ast.AttrString:
+		return strLit(a.Value), nil
+	case ast.AttrExpr:
+		return parser.ParseExpr(a.Value)
+	default:
+		return nil, fmt.Errorf("unknown attr kind %v", a.Kind)
+	}
 }
 
 func lowerAttr(a ast.Attr, ctx Context) (goast.Expr, error) {
 	switch a.Kind {
 	case ast.AttrBool:
 		if fn := htmlBoolAttrFunc(a.Key); fn != "" {
-			return call(goast.NewIdent(fn)), nil
+			return call(ctx.htmlIdent(fn)), nil
 		}
 		return call(goast.NewIdent("Attr"), strLit(a.Key)), nil
 	case ast.AttrString:
 		if fn := htmlStringAttrFunc(a.Key); fn != "" {
-			return call(goast.NewIdent(fn), strLit(a.Value)), nil
+			return call(ctx.htmlIdent(fn), strLit(a.Value)), nil
 		}
 		return call(goast.NewIdent("Attr"), strLit(a.Key), strLit(a.Value)), nil
 	case ast.AttrExpr:
@@ -230,7 +341,7 @@ func lowerAttr(a ast.Attr, ctx Context) (goast.Expr, error) {
 		if a.Key == "class" {
 			// If we can prove it's string-ish, wrap in Class(...).
 			if s, ok := lowerStringExpr(ex, ctx); ok {
-				return call(goast.NewIdent("Class"), s), nil
+				return call(ctx.htmlIdent("Class"), s), nil
 			}
 			// If it's a known Node identifier, pass through.
 			if id, ok := ex.(*goast.Ident); ok {
@@ -245,20 +356,20 @@ func lowerAttr(a ast.Attr, ctx Context) (goast.Expr, error) {
 				return ex, nil
 			}
 			// Default: treat as string expr and let Go typecheck it.
-			return call(goast.NewIdent("Class"), ex), nil
+			return call(ctx.htmlIdent("Class"), ex), nil
 		}
 
 		// If this is a boolean attribute, treat `<input disabled={cond}>` like JSX:
 		// include the attribute node only when cond is true.
 		if fn := htmlBoolAttrFunc(a.Key); fn != "" {
-			return call(goast.NewIdent("If"), ex, call(goast.NewIdent(fn))), nil
+			return call(goast.NewIdent("If"), ex, call(ctx.htmlIdent(fn))), nil
 		}
 
 		// Otherwise it's a string-ish attribute. We do not auto-coerce; let Go typecheck it.
 		strExpr := ex
 
 		if fn := htmlStringAttrFunc(a.Key); fn != "" {
-			return call(goast.NewIdent(fn), strExpr), nil
+			return call(ctx.htmlIdent(fn), strExpr), nil
 		}
 		return call(goast.NewIdent("Attr"), strLit(a.Key), strExpr), nil
 	default:
