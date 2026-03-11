@@ -26,10 +26,11 @@ const (
 const maxSingleLineCallLen = 80
 
 type compileResult struct {
-	fset     *gotoken.FileSet
-	af       *goast.File
-	mapping  []placeholder
-	rewritten []byte
+	fset        *gotoken.FileSet
+	af          *goast.File
+	mapping     []placeholder
+	rewritten   []byte
+	qualifyHTML bool
 }
 
 func compilePipeline(path string, src []byte) (*compileResult, error) {
@@ -53,9 +54,25 @@ func compilePipeline(path string, src []byte) (*compileResult, error) {
 		funcReturnTypes[name] = typ
 	}
 
+	funcParams := resolveImportedFuncParams(af)
+	if funcParams == nil {
+		funcParams = map[string][]gomponents.FuncParam{}
+	}
+	for name, params := range collectLocalFuncParams(af) {
+		funcParams[name] = params
+	}
+
+	qualifyHTML := hasUserDotImports(af)
+	htmlPrefix := ""
+	if qualifyHTML {
+		htmlPrefix = "html"
+	}
+
 	ctx := gomponents.Context{
 		VarTypes:        inferVarTypesFromPlaceholders(af, mapping, funcReturnTypes),
 		FuncReturnTypes: funcReturnTypes,
+		FuncParams:      funcParams,
+		HTMLPrefix:      htmlPrefix,
 	}
 
 	for i := range mapping {
@@ -67,7 +84,7 @@ func compilePipeline(path string, src []byte) (*compileResult, error) {
 		mapping[i].expr = ex
 	}
 
-	return &compileResult{fset: fset, af: af, mapping: mapping, rewritten: rewritten}, nil
+	return &compileResult{fset: fset, af: af, mapping: mapping, rewritten: rewritten, qualifyHTML: qualifyHTML}, nil
 }
 
 // CompileFile compiles a Go-first .gsx source (a Go file with embedded `<tag>` expressions)
@@ -78,7 +95,7 @@ func CompileFile(path string, src []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	ensureImports(cr.af, cr.mapping)
+	ensureImports(cr.af, cr.mapping, cr.qualifyHTML)
 
 	var buf bytes.Buffer
 	if err := format.Node(&buf, cr.fset, cr.af); err != nil {
@@ -136,6 +153,7 @@ func CompileFileForLSP(path string, src []byte) (goSrc []byte, sm *SourceMap, er
 
 	// Apply minimal import edits and inline placeholder expansions to produce a gopls-friendly Go view.
 	req := detectRequiredImports(mapping, mapsToSlice(loweredExprs))
+	req.qualifyHTML = cr.qualifyHTML
 	impRes := applyImportEdits(rewritten, req)
 
 	// When we changed imports, all subsequent placeholder offsets shift.
@@ -215,6 +233,7 @@ func resolveImportedFuncTypes(f *goast.File) map[string]string {
 		relDir = strings.TrimPrefix(relDir, "/")
 		absDir := filepath.Join(modRoot, relDir)
 
+		isDotImport := spec.Name != nil && spec.Name.Name == "."
 		localName := filepath.Base(importPath)
 		if spec.Name != nil && spec.Name.Name != "." && spec.Name.Name != "_" {
 			localName = spec.Name.Name
@@ -222,7 +241,11 @@ func resolveImportedFuncTypes(f *goast.File) map[string]string {
 
 		funcTypes := parseFuncReturnTypesFromDir(absDir)
 		for funcName, retType := range funcTypes {
-			result[localName+"."+funcName] = retType
+			if isDotImport {
+				result[funcName] = retType
+			} else {
+				result[localName+"."+funcName] = retType
+			}
 		}
 	}
 	return result
@@ -306,6 +329,158 @@ func collectLocalFuncReturnTypes(f *goast.File) map[string]string {
 		}
 	}
 	return result
+}
+
+func resolveImportedFuncParams(f *goast.File) map[string][]gomponents.FuncParam {
+	modPath, modRoot := module.FindModuleInfo()
+	if modPath == "" {
+		return nil
+	}
+	result := map[string][]gomponents.FuncParam{}
+	for _, spec := range f.Imports {
+		importPath := strings.Trim(spec.Path.Value, `"`)
+		if !strings.HasPrefix(importPath, modPath+"/") && importPath != modPath {
+			continue
+		}
+		relDir := strings.TrimPrefix(importPath, modPath)
+		relDir = strings.TrimPrefix(relDir, "/")
+		absDir := filepath.Join(modRoot, relDir)
+
+		isDotImport := spec.Name != nil && spec.Name.Name == "."
+		localName := filepath.Base(importPath)
+		if spec.Name != nil && spec.Name.Name != "." && spec.Name.Name != "_" {
+			localName = spec.Name.Name
+		}
+
+		funcParams := parseFuncParamsFromDir(absDir)
+		for funcName, params := range funcParams {
+			if isDotImport {
+				result[funcName] = params
+			} else {
+				result[localName+"."+funcName] = params
+			}
+		}
+	}
+	return result
+}
+
+func parseFuncParamsFromDir(dir string) map[string][]gomponents.FuncParam {
+	fset := gotoken.NewFileSet()
+	pkgs, err := parser.ParseDir(fset, dir, nil, 0)
+	if err != nil {
+		return nil
+	}
+	result := map[string][]gomponents.FuncParam{}
+	for _, pkg := range pkgs {
+		if strings.HasSuffix(pkg.Name, "_test") {
+			continue
+		}
+		for _, file := range pkg.Files {
+			for _, decl := range file.Decls {
+				fd, ok := decl.(*goast.FuncDecl)
+				if !ok || fd.Recv != nil {
+					continue
+				}
+				if !fd.Name.IsExported() {
+					continue
+				}
+				if fd.Type.Results == nil || fd.Type.Results.NumFields() != 1 {
+					continue
+				}
+				retType := classifyASTReturnType(fd.Type.Results.List[0].Type, file.Imports)
+				if retType != "Node" {
+					continue
+				}
+				params := extractFuncParams(fd.Type.Params, file.Imports)
+				if params != nil {
+					result[fd.Name.Name] = params
+				}
+			}
+		}
+	}
+	return result
+}
+
+func collectLocalFuncParams(f *goast.File) map[string][]gomponents.FuncParam {
+	result := map[string][]gomponents.FuncParam{}
+	for _, decl := range f.Decls {
+		fd, ok := decl.(*goast.FuncDecl)
+		if !ok || fd.Recv != nil {
+			continue
+		}
+		if fd.Type.Results == nil || fd.Type.Results.NumFields() != 1 {
+			continue
+		}
+		retType := classifyASTReturnType(fd.Type.Results.List[0].Type, f.Imports)
+		if retType != "Node" {
+			continue
+		}
+		params := extractFuncParams(fd.Type.Params, f.Imports)
+		if params != nil {
+			result[fd.Name.Name] = params
+		}
+	}
+	return result
+}
+
+func extractFuncParams(fl *goast.FieldList, imports []*goast.ImportSpec) []gomponents.FuncParam {
+	if fl == nil || fl.NumFields() == 0 {
+		return nil
+	}
+	var params []gomponents.FuncParam
+	for _, field := range fl.List {
+		isVariadic := false
+		typeExpr := field.Type
+		if ell, ok := field.Type.(*goast.Ellipsis); ok {
+			isVariadic = true
+			typeExpr = ell.Elt
+		}
+		typeName := classifyParamType(typeExpr, imports)
+		if typeName == "" {
+			return nil
+		}
+		if len(field.Names) == 0 {
+			params = append(params, gomponents.FuncParam{
+				Type:     typeName,
+				Variadic: isVariadic,
+			})
+		} else {
+			for _, name := range field.Names {
+				params = append(params, gomponents.FuncParam{
+					Name:     name.Name,
+					Type:     typeName,
+					Variadic: isVariadic,
+				})
+			}
+		}
+	}
+	return params
+}
+
+func classifyParamType(expr goast.Expr, imports []*goast.ImportSpec) string {
+	switch t := expr.(type) {
+	case *goast.Ident:
+		switch t.Name {
+		case "string", "bool", "int", "int64", "float64", "Node":
+			return t.Name
+		}
+	case *goast.SelectorExpr:
+		if t.Sel.Name == "Node" {
+			if xID, ok := t.X.(*goast.Ident); ok {
+				for _, imp := range imports {
+					impPath := strings.Trim(imp.Path.Value, `"`)
+					localName := filepath.Base(impPath)
+					if imp.Name != nil {
+						localName = imp.Name.Name
+					}
+					if localName == xID.Name && strings.Contains(impPath, "gomponents") {
+						return "Node"
+					}
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func resolveSelectorCallType(e goast.Expr, funcReturnTypes map[string]string) string {
@@ -619,7 +794,7 @@ func rewriteTagsToPlaceholders(src []byte) ([]byte, []placeholder, error) {
 	return []byte(out.String()), phs, nil
 }
 
-func ensureImports(f *goast.File, phs []placeholder) {
+func ensureImports(f *goast.File, phs []placeholder, qualifyHTML bool) {
 	// We always need dot imports for gomponents + html when any tags exist.
 	needsTags := len(phs) > 0
 
@@ -654,10 +829,12 @@ func ensureImports(f *goast.File, phs []placeholder) {
 
 	var add []impSpec
 	if needsTags {
-		add = append(add,
-			impSpec{name: ".", path: "maragu.dev/gomponents"},
-			impSpec{name: ".", path: "maragu.dev/gomponents/html"},
-		)
+		add = append(add, impSpec{name: ".", path: "maragu.dev/gomponents"})
+		if qualifyHTML {
+			add = append(add, impSpec{name: "html", path: "maragu.dev/gomponents/html"})
+		} else {
+			add = append(add, impSpec{name: ".", path: "maragu.dev/gomponents/html"})
+		}
 	}
 	if needsComponents {
 		add = append(add, impSpec{name: ".", path: "maragu.dev/gomponents/components"})
@@ -781,6 +958,18 @@ func usesIdent(node goast.Node, name string) bool {
 		return true
 	})
 	return found
+}
+
+func hasUserDotImports(f *goast.File) bool {
+	for _, spec := range f.Imports {
+		if spec.Name != nil && spec.Name.Name == "." {
+			path := strings.Trim(spec.Path.Value, `"`)
+			if !strings.HasPrefix(path, "maragu.dev/gomponents") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 type impSpec struct {
