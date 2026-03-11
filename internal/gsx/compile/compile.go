@@ -352,6 +352,14 @@ func inferVarTypesFromPlaceholders(f *goast.File, phs []placeholder, funcReturnT
 			if t.Type != nil && t.Type.Params != nil {
 				for _, field := range t.Type.Params.List {
 					typName := identName(field.Type)
+					// Variadic params (...Node) are []Node inside the body.
+					if typName == "" {
+						if ell, ok := field.Type.(*goast.Ellipsis); ok {
+							if id, ok := ell.Elt.(*goast.Ident); ok && id.Name == "Node" {
+								typName = "[]Node"
+							}
+						}
+					}
 					if typName == "" {
 						continue
 					}
@@ -1189,7 +1197,7 @@ func parseTagExpr(s *scanner) (ast.Node, error) {
 	tagStart := s.i
 	for {
 		b := s.peek()
-		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '-' {
+		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '-' || b == '.' {
 			s.next()
 			continue
 		}
@@ -1239,7 +1247,7 @@ func parseTagExpr(s *scanner) (ast.Node, error) {
 			s.next()
 			s.next()
 			closeStart := s.i
-			for (s.peek() >= 'a' && s.peek() <= 'z') || (s.peek() >= 'A' && s.peek() <= 'Z') || (s.peek() >= '0' && s.peek() <= '9') || s.peek() == '-' {
+			for (s.peek() >= 'a' && s.peek() <= 'z') || (s.peek() >= 'A' && s.peek() <= 'Z') || (s.peek() >= '0' && s.peek() <= '9') || s.peek() == '-' || s.peek() == '.' {
 				s.next()
 			}
 			closeTag := string(s.src[closeStart:s.i])

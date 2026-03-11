@@ -5,6 +5,7 @@ import (
 	goast "go/ast"
 	"go/parser"
 	gotoken "go/token"
+	"strings"
 
 	"github.com/kilianc/gsx/internal/gsx/ast"
 )
@@ -144,6 +145,19 @@ func lowerElement(el ast.Element, ctx Context) (goast.Expr, error) {
 			return nil, err
 		}
 		args = append(args, cx)
+	}
+
+	// Uppercase tag → component function call (JSX convention).
+	// Dotted tags like <pkg.Card> become qualified calls (pkg.Card(...)).
+	if dot := strings.IndexByte(el.Tag, '.'); dot >= 0 {
+		fun := &goast.SelectorExpr{
+			X:   goast.NewIdent(el.Tag[:dot]),
+			Sel: goast.NewIdent(el.Tag[dot+1:]),
+		}
+		return call(fun, args...), nil
+	}
+	if len(el.Tag) > 0 && el.Tag[0] >= 'A' && el.Tag[0] <= 'Z' {
+		return call(goast.NewIdent(el.Tag), args...), nil
 	}
 
 	if fn := htmlElementFunc(el.Tag); fn != "" {
