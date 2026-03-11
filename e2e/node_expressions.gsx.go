@@ -25,6 +25,9 @@ func NodeExpressions() Node {
 	// := from local uppercase call returning Node (was wrapped in Text)
 	local := MakeLocalNode("world")
 
+	// := from local lowercase call returning Node (was wrapped in Text)
+	lower := makeLocalNode("lower")
+
 	// strings must still be wrapped in Text
 	name := "test"
 	formatted := fmt.Sprintf("hi %s", name)
@@ -32,7 +35,9 @@ func NodeExpressions() Node {
 	return Div(
 		child,
 		local,
+		lower,
 		helpers.MakeNode("direct"),
+		makeLocalNode("inline"),
 		Text(name),
 		Text(formatted),
 		Text(fmt.Sprintf("inline %s", name)),
@@ -40,5 +45,9 @@ func NodeExpressions() Node {
 }
 
 func MakeLocalNode(s string) Node {
+	return Text(s)
+}
+
+func makeLocalNode(s string) Node {
 	return Text(s)
 }

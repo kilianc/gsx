@@ -42,6 +42,14 @@ func CompileFile(path string, src []byte) ([]byte, error) {
 
 	// Resolve imported function return types for accurate Node/string classification.
 	funcReturnTypes := resolveImportedFuncTypes(af)
+	if funcReturnTypes == nil {
+		funcReturnTypes = map[string]string{}
+	}
+
+	// Collect local (same-file) function return types including unexported functions.
+	for name, typ := range collectLocalFuncReturnTypes(af) {
+		funcReturnTypes[name] = typ
+	}
 
 	// Infer which locals are Nodes (defined from GSX placeholders) so `{ident}` splicing works.
 	ctx := gomponents.Context{
@@ -118,6 +126,14 @@ func CompileFileForLSP(path string, src []byte) (goSrc []byte, sm *SourceMap, er
 
 	// Resolve imported function return types for accurate Node/string classification.
 	funcReturnTypes := resolveImportedFuncTypes(af)
+	if funcReturnTypes == nil {
+		funcReturnTypes = map[string]string{}
+	}
+
+	// Collect local (same-file) function return types including unexported functions.
+	for name, typ := range collectLocalFuncReturnTypes(af) {
+		funcReturnTypes[name] = typ
+	}
 
 	// Infer which locals are Nodes (defined from GSX placeholders) so `{ident}` splicing works.
 	ctx := gomponents.Context{
@@ -318,6 +334,24 @@ func classifyASTReturnType(expr goast.Expr, imports []*goast.ImportSpec) string 
 	return ""
 }
 
+func collectLocalFuncReturnTypes(f *goast.File) map[string]string {
+	result := map[string]string{}
+	for _, decl := range f.Decls {
+		fd, ok := decl.(*goast.FuncDecl)
+		if !ok || fd.Recv != nil {
+			continue
+		}
+		if fd.Type.Results == nil || fd.Type.Results.NumFields() != 1 {
+			continue
+		}
+		retType := classifyASTReturnType(fd.Type.Results.List[0].Type, f.Imports)
+		if retType != "" {
+			result[fd.Name.Name] = retType
+		}
+	}
+	return result
+}
+
 func resolveSelectorCallType(e goast.Expr, funcReturnTypes map[string]string) string {
 	ce, ok := e.(*goast.CallExpr)
 	if !ok {
@@ -392,6 +426,15 @@ func inferVarTypesFromPlaceholders(f *goast.File, phs []placeholder, funcReturnT
 							out[lhsID.Name] = resolved
 							continue
 						}
+						// Resolved return type from local function signature.
+						if isCall {
+							if id, ok2 := ce.Fun.(*goast.Ident); ok2 {
+								if typ, ok2 := funcReturnTypes[id.Name]; ok2 {
+									out[lhsID.Name] = typ
+									continue
+								}
+							}
+						}
 						// Simple string inference.
 						if isExprStringish(t.Rhs[i]) {
 							out[lhsID.Name] = "string"
@@ -431,6 +474,15 @@ func inferVarTypesFromPlaceholders(f *goast.File, phs []placeholder, funcReturnT
 					if resolved := resolveSelectorCallType(t.Values[i], funcReturnTypes); resolved != "" {
 						out[t.Names[i].Name] = resolved
 						continue
+					}
+					// Resolved return type from local function signature.
+					if isCall {
+						if id, ok2 := ce.Fun.(*goast.Ident); ok2 {
+							if typ, ok2 := funcReturnTypes[id.Name]; ok2 {
+								out[t.Names[i].Name] = typ
+								continue
+							}
+						}
 					}
 					// Simple string inference.
 					if isExprStringish(t.Values[i]) {
