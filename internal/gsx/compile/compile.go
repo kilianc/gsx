@@ -507,9 +507,19 @@ func resolveSelectorCallType(e goast.Expr, funcReturnTypes map[string]string) st
 }
 
 func inferRHSType(rhs goast.Expr, phNames map[string]bool, funcReturnTypes map[string]string) string {
+	if cl, ok := rhs.(*goast.CompositeLit); ok {
+		if typ := typeString(cl.Type); typ != "" {
+			return typ
+		}
+	}
 	ce, isCall := rhs.(*goast.CallExpr)
 	if isCall {
 		if id, ok := ce.Fun.(*goast.Ident); ok {
+			if id.Name == "make" && len(ce.Args) > 0 {
+				if typ := typeString(ce.Args[0]); typ != "" {
+					return typ
+				}
+			}
 			if phNames[id.Name] && len(ce.Args) == 0 {
 				return "Node"
 			}
@@ -552,6 +562,9 @@ func inferVarTypesFromPlaceholders(f *goast.File, phs []placeholder, funcReturnT
 								typName = "[]Node"
 							}
 						}
+					}
+					if typName == "" {
+						typName = typeString(field.Type)
 					}
 					if typName == "" {
 						continue
@@ -609,6 +622,10 @@ func typeString(t goast.Expr) string {
 		case "string":
 			return "string"
 		}
+	case *goast.SelectorExpr:
+		if tt.Sel != nil && tt.Sel.Name == "Node" {
+			return "Node"
+		}
 	case *goast.ArrayType:
 		if tt.Len == nil {
 			if id, ok := tt.Elt.(*goast.Ident); ok {
@@ -617,6 +634,11 @@ func typeString(t goast.Expr) string {
 				}
 				if id.Name == "string" {
 					return "[]string"
+				}
+			}
+			if sel, ok := tt.Elt.(*goast.SelectorExpr); ok {
+				if sel.Sel != nil && sel.Sel.Name == "Node" {
+					return "[]Node"
 				}
 			}
 		}
