@@ -18,10 +18,35 @@ type Page struct {
 	Title    string
 	Subtitle string
 	Body     Node
+
+	// Scripts are script URLs to load at the end of the body, relative to the
+	// site root. Only the playground uses this; prose pages stay static.
+	Scripts []string
+	// Wide drops the sidebar and lets the page use the full window, which an
+	// editor beside its output needs and an article does not.
+	Wide bool
 }
 
 // Layout wraps a page in the site chrome.
 func Layout(p Page, pages []Page) Node {
+	shell := "shell"
+	var sidebar Node
+	if p.Wide {
+		shell += " shell-wide"
+	} else {
+		sidebar = Sidebar(p, pages)
+	}
+
+	var scripts []Node
+	for _, src := range p.Scripts {
+		scripts = append(scripts, html.Script(html.Src(src), html.Defer()))
+	}
+
+	var footer Node
+	if !p.Wide {
+		footer = Footer()
+	}
+
 	return Group{
 		Raw("<!doctype html>\n"),
 		html.HTML(
@@ -40,8 +65,8 @@ func Layout(p Page, pages []Page) Node {
 				html.A(html.Class("skip"), html.Href("#content"), Text("Skip to content")),
 				Header(),
 				html.Div(
-					html.Class("shell"),
-					Sidebar(p, pages),
+					html.Class(shell),
+					sidebar,
 					html.Main(
 						html.ID("content"),
 						html.Div(
@@ -50,9 +75,10 @@ func Layout(p Page, pages []Page) Node {
 							html.P(html.Class("lede"), Text(p.Subtitle)),
 						),
 						p.Body,
-						Footer(),
+						footer,
 					),
 				),
+				Group(scripts),
 			),
 		),
 	}
@@ -68,6 +94,7 @@ func Header() Node {
 		),
 		html.Nav(
 			html.Class("topnav"),
+			html.A(html.Href("./playground.html"), Text("Playground")),
 			html.A(html.Href("./language.html"), Text("Language")),
 			html.A(html.Href("./components.html"), Text("Components")),
 			html.A(html.Href("./live-reload.html"), Text("Live reload")),

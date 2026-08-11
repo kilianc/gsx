@@ -15,3 +15,7 @@ vscode/gsx-vscode/*.vsix
 .tmp/
 issues/
 .DS_Store
+
+# Local tooling: editor launch config, and the worktrees this repo is checked
+# out into. Committing it would nest the repo inside itself.
+.claude/

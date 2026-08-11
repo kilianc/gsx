@@ -9,6 +9,7 @@
 
 <p align="center">
   <a href="https://kilianc.github.io/gsx/">Documentation</a> ·
+  <a href="https://kilianc.github.io/gsx/playground.html">Playground</a> ·
   <a href="https://kilianc.github.io/gsx/language.html">Language reference</a> ·
   <a href="https://kilianc.github.io/gsx/composition.html">Components</a> ·
   <a href="https://kilianc.github.io/gsx/live-reload.html">Live reload</a>

@@ -12,6 +12,7 @@ import (
 func Pages() []Page {
 	return []Page{
 		IndexPage(),
+		PlaygroundPage(),
 		LanguagePage(),
 		ComponentsPage(),
 		CompositionPage(),
@@ -32,7 +33,16 @@ func Render(p Page, all []Page) ([]byte, error) {
 
 // Serve renders on every request, so `go run ./docs -serve` under `gsx dev`
 // picks up edits without a separate build step.
-func Serve(addr string) error {
+//
+// assets is a directory of prebuilt files — the playground's wasm bundle and
+// its JavaScript — served for any path that is not a page. It may be empty,
+// in which case only the prose pages work.
+func Serve(addr string, assets string) error {
+	var files http.Handler
+	if assets != "" {
+		files = http.FileServer(http.Dir(assets))
+	}
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		slug := strings.Trim(r.URL.Path, "/")
 		slug = strings.TrimSuffix(slug, ".html")
@@ -52,6 +62,11 @@ func Serve(addr string) error {
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_, _ = w.Write(html)
+			return
+		}
+
+		if files != nil {
+			files.ServeHTTP(w, r)
 			return
 		}
 		http.NotFound(w, r)
