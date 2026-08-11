@@ -15,6 +15,7 @@ import (
 	"github.com/kilianc/gsx/internal/gsx/compile"
 	"github.com/kilianc/gsx/internal/gsx/lsp"
 	"github.com/kilianc/gsx/internal/gsx/outfile"
+	"github.com/kilianc/gsx/internal/gsx/parse"
 )
 
 func main() {
@@ -150,7 +151,6 @@ func fatal(err error) {
 	os.Exit(1)
 }
 
-
 func dirGSXPaths(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -175,6 +175,12 @@ func compileFile(pth string) ([]byte, error) {
 	}
 	src, err := compile.CompileFile(pth, b)
 	if err != nil {
+		// A parse error already renders as `path:line:col: msg` with a source
+		// snippet, so prefixing it again would just repeat the path.
+		var pe *parse.Error
+		if errors.As(err, &pe) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("%s: %w", pth, err)
 	}
 	return src, nil

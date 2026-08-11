@@ -60,11 +60,10 @@ func lowerNode(n ast.Node, ctx Context) (goast.Expr, error) {
 	case ast.Text:
 		return call(goast.NewIdent("Text"), strLit(t.Value)), nil
 	case ast.Expr:
-		ex, err := parser.ParseExpr(t.Src)
+		ex, err := parseSplice(t.Src, t.Nested, ctx)
 		if err != nil {
-			return nil, fmt.Errorf("invalid expression %q: %w", t.Src, err)
+			return nil, err
 		}
-		ex = ctx.qualifyHTMLInExpr(ex)
 
 		// If this is a local identifier and we know it is a Node, splice it as-is.
 		if id, ok := ex.(*goast.Ident); ok {
@@ -255,11 +254,11 @@ func lowerTypedComponent(el ast.Element, fun goast.Expr, params []FuncParam, ctx
 
 	for _, a := range el.Attrs {
 		if idx, ok := paramIdx[a.Key]; ok {
-			val, err := lowerAttrValue(a)
+			val, err := lowerAttrValue(a, ctx)
 			if err != nil {
 				return nil, err
 			}
-			positional[idx] = ctx.qualifyHTMLInExpr(val)
+			positional[idx] = val
 			used[idx] = true
 		} else if hasVariadic {
 			ax, err := lowerAttr(a, ctx)
@@ -290,16 +289,148 @@ func lowerTypedComponent(el ast.Element, fun goast.Expr, params []FuncParam, ctx
 }
 
 // lowerAttrValue converts an attribute to a raw Go expression (not wrapped in Attr/Class/etc).
-func lowerAttrValue(a ast.Attr) (goast.Expr, error) {
+func lowerAttrValue(a ast.Attr, ctx Context) (goast.Expr, error) {
 	switch a.Kind {
 	case ast.AttrBool:
 		return goast.NewIdent("true"), nil
 	case ast.AttrString:
 		return strLit(a.Value), nil
 	case ast.AttrExpr:
-		return parser.ParseExpr(a.Value)
+		return parseSplice(a.Value, a.Nested, ctx)
 	default:
 		return nil, fmt.Errorf("unknown attr kind %v", a.Kind)
+	}
+}
+
+// parseSplice parses the Go source of a `{...}` splice and resolves it into a
+// single Go expression.
+//
+// Tag expressions nested inside the splice were replaced by placeholder calls
+// during parsing. They are lowered here, with the caller's full type context, so
+// that `{If(ok, <p>{n}</p>)}` sees the same VarTypes as the tag it sits in. The
+// parser used to lower them eagerly against an empty context, which produced
+// `Text(n)` for a Node-typed `n` — code that does not compile.
+func parseSplice(src string, nested map[string]ast.Node, ctx Context) (goast.Expr, error) {
+	ex, err := parser.ParseExpr(src)
+	if err != nil {
+		return nil, fmt.Errorf("invalid expression %q: %w", src, err)
+	}
+	if len(nested) > 0 {
+		if ex, err = substituteNested(ex, nested, ctx); err != nil {
+			return nil, err
+		}
+	}
+	return ctx.qualifyHTMLInExpr(ex), nil
+}
+
+// substituteNested replaces each `__gsx_sub_N()` placeholder call with the
+// lowered form of the tag it stands for.
+func substituteNested(root goast.Expr, nested map[string]ast.Node, ctx Context) (goast.Expr, error) {
+	var firstErr error
+
+	var walk func(goast.Expr) goast.Expr
+	walk = func(e goast.Expr) goast.Expr {
+		if e == nil || firstErr != nil {
+			return e
+		}
+		if ce, ok := e.(*goast.CallExpr); ok && len(ce.Args) == 0 {
+			if id, ok := ce.Fun.(*goast.Ident); ok {
+				if node, ok := nested[id.Name]; ok {
+					lowered, err := lowerNode(node, ctx)
+					if err != nil {
+						firstErr = err
+						return e
+					}
+					// Already fully lowered; do not descend into it.
+					return lowered
+				}
+			}
+		}
+		rewriteChildren(e, walk)
+		return e
+	}
+
+	out := walk(root)
+	return out, firstErr
+}
+
+// rewriteChildren applies fn to every sub-expression of e, in place.
+//
+// SelectorExpr.Sel and KeyValueExpr.Key are names, not expressions to rewrite,
+// so they are deliberately skipped.
+func rewriteChildren(e goast.Expr, fn func(goast.Expr) goast.Expr) {
+	switch t := e.(type) {
+	case *goast.CallExpr:
+		t.Fun = fn(t.Fun)
+		for i := range t.Args {
+			t.Args[i] = fn(t.Args[i])
+		}
+	case *goast.SelectorExpr:
+		t.X = fn(t.X)
+	case *goast.CompositeLit:
+		for i := range t.Elts {
+			t.Elts[i] = fn(t.Elts[i])
+		}
+	case *goast.KeyValueExpr:
+		t.Value = fn(t.Value)
+	case *goast.ParenExpr:
+		t.X = fn(t.X)
+	case *goast.UnaryExpr:
+		t.X = fn(t.X)
+	case *goast.StarExpr:
+		t.X = fn(t.X)
+	case *goast.BinaryExpr:
+		t.X = fn(t.X)
+		t.Y = fn(t.Y)
+	case *goast.IndexExpr:
+		t.X = fn(t.X)
+		t.Index = fn(t.Index)
+	case *goast.SliceExpr:
+		t.X = fn(t.X)
+		if t.Low != nil {
+			t.Low = fn(t.Low)
+		}
+		if t.High != nil {
+			t.High = fn(t.High)
+		}
+		if t.Max != nil {
+			t.Max = fn(t.Max)
+		}
+	case *goast.TypeAssertExpr:
+		t.X = fn(t.X)
+	case *goast.FuncLit:
+		rewriteChildrenInStmts(t.Body, fn)
+	}
+}
+
+func rewriteChildrenInStmts(b *goast.BlockStmt, fn func(goast.Expr) goast.Expr) {
+	if b == nil {
+		return
+	}
+	for _, s := range b.List {
+		switch st := s.(type) {
+		case *goast.ReturnStmt:
+			for i := range st.Results {
+				st.Results[i] = fn(st.Results[i])
+			}
+		case *goast.ExprStmt:
+			st.X = fn(st.X)
+		case *goast.AssignStmt:
+			for i := range st.Rhs {
+				st.Rhs[i] = fn(st.Rhs[i])
+			}
+		case *goast.BlockStmt:
+			rewriteChildrenInStmts(st, fn)
+		case *goast.IfStmt:
+			rewriteChildrenInStmts(st.Body, fn)
+			if eb, ok := st.Else.(*goast.BlockStmt); ok {
+				rewriteChildrenInStmts(eb, fn)
+			}
+		case *goast.RangeStmt:
+			rewriteChildrenInStmts(st.Body, fn)
+		case *goast.ForStmt:
+			rewriteChildrenInStmts(st.Body, fn)
+		}
 	}
 }
 
@@ -316,11 +447,10 @@ func lowerAttr(a ast.Attr, ctx Context) (goast.Expr, error) {
 		}
 		return call(goast.NewIdent("Attr"), strLit(a.Key), strLit(a.Value)), nil
 	case ast.AttrExpr:
-		ex, err := parser.ParseExpr(a.Value)
+		ex, err := parseSplice(a.Value, a.Nested, ctx)
 		if err != nil {
-			return nil, fmt.Errorf("invalid attribute expression %q: %w", a.Value, err)
+			return nil, err
 		}
-		ex = ctx.qualifyHTMLInExpr(ex)
 
 		// Attribute-node injection: `{expr}` in a start tag is represented as an AttrExpr with empty Key.
 		// Treat it as already-producing an attribute Node.
