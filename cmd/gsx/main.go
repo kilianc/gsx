@@ -8,27 +8,42 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/kilianc/gsx/internal/gsx/compile"
+	"github.com/kilianc/gsx/internal/gsx/dev"
 	"github.com/kilianc/gsx/internal/gsx/lsp"
 	"github.com/kilianc/gsx/internal/gsx/outfile"
 	"github.com/kilianc/gsx/internal/gsx/parse"
 )
 
 func main() {
-	// Subcommand: `gsx lsp`
-	if len(os.Args) > 1 && os.Args[1] == "lsp" {
-		if err := lspMain(os.Args[2:]); err != nil {
-			fatal(err)
+	// Subcommands. Anything else is treated as a path pattern, so the original
+	// `gsx ./...` invocation keeps working.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "lsp":
+			if err := lspMain(os.Args[2:]); err != nil {
+				fatal(err)
+			}
+			return
+		case "dev":
+			if err := devMain(os.Args[2:]); err != nil {
+				fatal(err)
+			}
+			return
 		}
-		return
 	}
 
 	flag.Usage = func() {
 		_, _ = fmt.Fprintln(os.Stderr, "Usage: gsx [flags] [paths...]")
+		_, _ = fmt.Fprintln(os.Stderr, "       gsx dev [flags]")
+		_, _ = fmt.Fprintln(os.Stderr, "       gsx lsp [flags]")
 		_, _ = fmt.Fprintln(os.Stderr, "")
 		_, _ = fmt.Fprintln(os.Stderr, "Generates one *.gsx.go file next to each *.gsx source.")
 		_, _ = fmt.Fprintln(os.Stderr, "")
@@ -144,6 +159,74 @@ func lspMain(args []string) error {
 		goplsArgs = append(goplsArgs, "-remote", *goplsRemote)
 	}
 	return lsp.Run(context.Background(), os.Stdin, os.Stdout, goplsArgs)
+}
+
+func devMain(args []string) error {
+	fs := flag.NewFlagSet("dev", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		_, _ = fmt.Fprintln(os.Stderr, "Usage: gsx dev [flags]")
+		_, _ = fmt.Fprintln(os.Stderr, "")
+		_, _ = fmt.Fprintln(os.Stderr, "Watches *.gsx and *.go, regenerates, restarts your app, and reloads the browser.")
+		_, _ = fmt.Fprintln(os.Stderr, "Open the -addr address; requests are proxied to -app-addr with a reload client injected.")
+		_, _ = fmt.Fprintln(os.Stderr, "")
+		fs.PrintDefaults()
+	}
+	run := fs.String("run", "go run .", "command that builds and starts your app")
+	appAddr := fs.String("app-addr", "localhost:3000", "address your app listens on")
+	addr := fs.String("addr", "localhost:8080", "address the dev server listens on — open this one")
+	root := fs.String("dir", "", "directory to watch (defaults to the current directory)")
+	debounce := fs.Duration("debounce", 120*time.Millisecond, "how long to let file events settle before rebuilding")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		fs.Usage()
+		return fmt.Errorf("gsx dev: unexpected argument %q", fs.Arg(0))
+	}
+
+	watchRoot, err := dev.DefaultRoot(*root)
+	if err != nil {
+		return err
+	}
+
+	// Ctrl-C must tear down the supervised app too, not just this process.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	return dev.Run(ctx, dev.Options{
+		Root:     watchRoot,
+		Run:      *run,
+		AppAddr:  *appAddr,
+		Addr:     *addr,
+		Debounce: *debounce,
+		Log:      os.Stderr,
+		Generate: func() error {
+			paths, err := collectGSXPaths(watchRoot, []string{"./..."})
+			if err != nil {
+				return err
+			}
+			return generateAll(paths)
+		},
+	})
+}
+
+// generateAll regenerates without the per-file progress logging the CLI prints, since
+// the dev loop has its own output.
+func generateAll(paths []string) error {
+	sort.Strings(paths)
+	var allErr error
+	for _, pth := range paths {
+		src, err := compileFile(pth)
+		if err != nil {
+			allErr = errors.Join(allErr, err)
+			continue
+		}
+		if err := outfile.WriteGeneratedFile(pth+".go", src); err != nil {
+			allErr = errors.Join(allErr, err)
+		}
+	}
+	return allErr
 }
 
 func fatal(err error) {
