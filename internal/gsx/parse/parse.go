@@ -168,9 +168,11 @@ func (p *parser) parseAttrs(tag string, tagPos int) (attrs []ast.Attr, selfClosi
 			return attrs, false, nil
 		}
 
-		// A bare `{expr}` in attribute position injects an attribute node.
+		// A bare `{expr}` in attribute position injects an attribute node, and
+		// `{...expr}` spreads a []Node of them.
 		if p.s.peek() == '{' {
 			pos := p.s.i
+			spread := p.s.peekN(1) == '.' && p.s.peekN(2) == '.' && p.s.peekN(3) == '.'
 			src, nested, err := p.readBracedExpr()
 			if err != nil {
 				return nil, false, err
@@ -178,8 +180,13 @@ func (p *parser) parseAttrs(tag string, tagPos int) (attrs []ast.Attr, selfClosi
 			if isCommentOnly(src) {
 				continue
 			}
+			kind := ast.AttrExpr
+			if spread {
+				kind = ast.AttrSpread
+				src = strings.TrimPrefix(strings.TrimSpace(src), "...")
+			}
 			attrs = append(attrs, ast.Attr{
-				Kind:   ast.AttrExpr,
+				Kind:   kind,
 				Value:  strings.TrimSpace(src),
 				Nested: nested,
 				Pos:    pos,

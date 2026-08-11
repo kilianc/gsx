@@ -3,8 +3,10 @@ gen: ## Regenerate every *.gsx.go from its *.gsx source
 	go run ./cmd/gsx ./...
 
 .PHONY: check
-check: ## Fail if any checked-in *.gsx.go is out of date
+check: ## Fail if any checked-in generated file is out of date
 	go run ./cmd/gsx -check ./...
+	go generate ./...
+	git diff --exit-code -- '*_tables.go'
 
 .PHONY: test
 test: ## Run the full test suite

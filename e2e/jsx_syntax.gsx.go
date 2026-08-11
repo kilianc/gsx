@@ -27,7 +27,7 @@ func JSXSyntax(name string) Node {
 			Text("This sentence is written across three source lines but renders as one."),
 		),
 		html.Ul(html.Li(Text("one")), html.Li(Text("two"))),
-		html.P(El("b", Text("bold")), Text(" then "), El("i", Text("italic"))),
+		html.P(html.B(Text("bold")), Text(" then "), html.I(Text("italic"))),
 		html.P(Text("Tom & Jerry <3 AB café")),
 		html.Span(Text(name)),
 	)

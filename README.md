@@ -119,6 +119,34 @@ Use this in CI so a `.gsx` edit can never land without its regenerated `.gsx.go`
   - Attribute expressions must typecheck as expected by gomponents helpers (e.g. `class={s}` becomes `Class(s)`).
 - **Comments**: `{/* ... */}` is dropped at compile time, in both child and attribute position
 
+### Attributes
+
+Attribute names accept both the HTML spelling and the **JSX spelling**, so pasted JSX
+compiles and muscle memory doesn't produce a silently wrong attribute:
+
+```go
+<label htmlFor="email">Email</label>          // → for="email"
+<div className="card">…</div>                 // → class="card"
+<input autoComplete="off" maxLength="120" />  // → autocomplete, maxlength
+```
+
+Names are matched case-insensitively, and `data-*` / `aria-*` pass through as written.
+
+**Spread attributes** apply a prebuilt `[]Node` of attributes to an element:
+
+```go
+func sharedAttrs() []Node {
+  return []Node{Attr("class", "shared"), Attr("data-kind", "demo")}
+}
+
+<span {...sharedAttrs()}>one</span>
+<button type="button" {...sharedAttrs()} disabled>two</button>
+```
+
+> Inside plain Go — a helper like `sharedAttrs` above — `gomponents/html` helpers need an
+> explicit `html.` prefix (`html.Class("x")`). Bare names are only resolved inside tag
+> expressions and `{...}` splices.
+
 ### Fragments
 
 Two sibling tags can't sit adjacent in one Go expression — but a fragment can wrap them:
