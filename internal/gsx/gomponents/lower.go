@@ -266,7 +266,12 @@ func lowerTypedComponent(el ast.Element, fun goast.Expr, params []FuncParam, ctx
 
 	paramIdx := map[string]int{}
 	for i, p := range namedParams {
-		paramIdx[p.Name] = i
+		// An unnamed parameter cannot be addressed by an attribute, and letting
+		// it into the index would let a keyless attribute — `{expr}` or
+		// `{...expr}` — bind to it by accident.
+		if p.Name != "" {
+			paramIdx[p.Name] = i
+		}
 	}
 
 	positional := make([]goast.Expr, len(namedParams))
@@ -274,7 +279,7 @@ func lowerTypedComponent(el ast.Element, fun goast.Expr, params []FuncParam, ctx
 	var variadicArgs []goast.Expr
 
 	for _, a := range el.Attrs {
-		if idx, ok := paramIdx[a.Key]; ok {
+		if idx, ok := paramIdx[a.Key]; ok && a.Key != "" {
 			val, err := lowerAttrValue(a, ctx)
 			if err != nil {
 				return nil, err
@@ -457,6 +462,15 @@ func rewriteChildrenInStmts(b *goast.BlockStmt, fn func(goast.Expr) goast.Expr) 
 
 func lowerAttr(a ast.Attr, ctx Context) (goast.Expr, error) {
 	switch a.Kind {
+	case ast.AttrSpread:
+		// `{...attrs}` where attrs is a []Node. Group turns it back into the
+		// single Node an element's variadic argument list expects, so a set of
+		// attributes can be built once and applied to many elements.
+		ex, err := parseSplice(a.Value, a.Nested, ctx)
+		if err != nil {
+			return nil, err
+		}
+		return call(goast.NewIdent("Group"), ex), nil
 	case ast.AttrBool:
 		if fn := htmlBoolAttrFunc(a.Key); fn != "" {
 			return call(ctx.htmlIdent(fn)), nil
@@ -628,164 +642,3 @@ func qualifyHTMLWalkStmts(stmts []goast.Stmt, prefix string) {
 		}
 	}
 }
-
-// htmlExports is the set of all exported identifiers from maragu.dev/gomponents/html.
-var htmlExports = func() map[string]bool {
-	names := []string{
-		// Elements
-		"A", "Abbr", "Address", "Area", "Article", "Aside", "Audio",
-		"B", "Base", "BlockQuote", "Body", "Br", "Button",
-		"Canvas", "Caption", "Cite", "CiteEl", "Code", "Col", "ColGroup",
-		"Data", "DataEl", "DataList", "Dd", "Del", "Details", "Dfn", "Dialog", "Div", "Dl", "Doctype", "Dt",
-		"Em", "Embed",
-		"FieldSet", "FigCaption", "Figure", "Footer", "Form", "FormEl",
-		"H1", "H2", "H3", "H4", "H5", "H6", "HGroup", "HTML", "Head", "Header", "Hr",
-		"I", "IFrame", "Img", "Input", "Ins",
-		"Kbd",
-		"Label", "LabelEl", "Legend", "Li", "Link",
-		"Main", "Mark", "Menu", "Meta", "Meter",
-		"Nav", "NoScript",
-		"Object", "Ol", "OptGroup", "Option",
-		"P", "Param", "Picture", "Pre", "Progress",
-		"Q",
-		"S", "Samp", "Script", "Search", "Section", "Select", "SlotEl", "Small", "Source", "Span", "Strong", "StyleEl", "Sub", "Summary", "Sup", "SVG",
-		"Table", "TBody", "Td", "Template", "Textarea", "TFoot", "Th", "THead", "Time", "Title", "TitleEl", "Tr",
-		"U", "Ul",
-		"Var", "Video", "Wbr",
-
-		// String attributes
-		"Accept", "Action", "Alt", "Aria", "As", "AutoComplete",
-		"Charset", "CiteAttr", "Class", "ColSpan", "Cols", "Content", "CrossOrigin",
-		"DataAttr", "DateTime", "Dir", "Download", "Draggable",
-		"EncType",
-		"For", "FormAction", "FormAttr", "FormEncType", "FormMethod", "FormTarget",
-		"Height", "Hidden", "Href",
-		"ID", "Integrity",
-		"LabelAttr", "Lang", "List", "Loading", "Loop",
-		"Max", "MaxLength", "Method", "Min", "MinLength",
-		"Name",
-		"Pattern", "Placeholder", "Popover", "PopoverTarget", "PopoverTargetAction", "Poster", "Preload",
-		"ReferrerPolicy", "Rel", "Role", "RowSpan", "Rows",
-		"Scope", "SlotAttr", "Src", "SrcSet", "Step", "Style", "StyleAttr",
-		"TabIndex", "Target", "TitleAttr", "Type",
-		"Value",
-		"Width",
-
-		// Boolean attributes
-		"Async", "AutoFocus", "AutoPlay",
-		"Checked", "Controls",
-		"Defer", "Disabled",
-		"FormNoValidate",
-		"Multiple", "Muted",
-		"NoValidate",
-		"Open",
-		"PlaysInline",
-		"ReadOnly", "Required",
-		"Selected",
-	}
-	m := make(map[string]bool, len(names))
-	for _, n := range names {
-		m[n] = true
-	}
-	return m
-}()
-
-func htmlElementFunc(tag string) string {
-	switch tag {
-	case "a":
-		return "A"
-	case "button":
-		return "Button"
-	case "div":
-		return "Div"
-	case "footer":
-		return "Footer"
-	case "form":
-		return "Form"
-	case "h1":
-		return "H1"
-	case "h2":
-		return "H2"
-	case "h3":
-		return "H3"
-	case "h4":
-		return "H4"
-	case "h5":
-		return "H5"
-	case "h6":
-		return "H6"
-	case "header":
-		return "Header"
-	case "img":
-		return "Img"
-	case "input":
-		return "Input"
-	case "label":
-		return "Label"
-	case "li":
-		return "Li"
-	case "main":
-		return "Main"
-	case "nav":
-		return "Nav"
-	case "p":
-		return "P"
-	case "section":
-		return "Section"
-	case "span":
-		return "Span"
-	case "ul":
-		return "Ul"
-	default:
-		return ""
-	}
-}
-
-func htmlStringAttrFunc(key string) string {
-	switch key {
-	case "class":
-		return "Class"
-	case "href":
-		return "Href"
-	case "id":
-		return "ID"
-	case "src":
-		return "Src"
-	case "style":
-		return "Style"
-	default:
-		return ""
-	}
-}
-
-func htmlBoolAttrFunc(key string) string {
-	switch key {
-	case "checked":
-		return "Checked"
-	case "disabled":
-		return "Disabled"
-	case "required":
-		return "Required"
-	case "selected":
-		return "Selected"
-	default:
-		return ""
-	}
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

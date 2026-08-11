@@ -17,7 +17,7 @@ func init() {
 
 func AppendMultiline() Node {
 	var rows []Node
-	rows = append(rows, El("tr", El("td", Text("hello"))))
-	rows = append(rows, El("tr", El("td", Text("world"))))
+	rows = append(rows, html.Tr(html.Td(Text("hello"))))
+	rows = append(rows, html.Tr(html.Td(Text("world"))))
 	return html.Div(Group(rows))
 }
