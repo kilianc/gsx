@@ -22,6 +22,11 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # cmd/gsx-wasm is behind a js/wasm build tag, so the steps above skip it
+      # entirely. Without this the playground could break and CI stay green.
+      - name: Build for the browser
+        run: GOOS=js GOARCH=wasm go build -o /dev/null ./cmd/gsx-wasm
+
       # The checked-in *.gsx.go files are the golden output of the compiler and
       # are compiled into the e2e test binary, so they must be current.
       - name: Check generated files are up to date
@@ -35,7 +40,7 @@ jobs:
       - name: Check generated HTML tables are up to date
         run: |
           go generate ./...
-          git diff --exit-code -- '*_tables.go'
+          git diff --exit-code -- '*_tables.go' 'internal/gsx/playground/symbols'
 
       - name: Test
         run: go test ./...

@@ -12,10 +12,35 @@ type Page struct {
 	Title    string
 	Subtitle string
 	Body     Node
+
+	// Scripts are script URLs to load at the end of the body, relative to the
+	// site root. Only the playground uses this; prose pages stay static.
+	Scripts []string
+	// Wide drops the sidebar and lets the page use the full window, which an
+	// editor beside its output needs and an article does not.
+	Wide bool
 }
 
 // Layout wraps a page in the site chrome.
 func Layout(p Page, pages []Page) Node {
+	shell := "shell"
+	var sidebar Node
+	if p.Wide {
+		shell += " shell-wide"
+	} else {
+		sidebar = Sidebar(p, pages)
+	}
+
+	var scripts []Node
+	for _, src := range p.Scripts {
+		scripts = append(scripts, <script src={src} defer></script>)
+	}
+
+	var footer Node
+	if !p.Wide {
+		footer = Footer()
+	}
+
 	return (
 		<>
 			{Raw("<!doctype html>\n")}
@@ -30,17 +55,18 @@ func Layout(p Page, pages []Page) Node {
 				<body>
 					<a class="skip" href="#content">Skip to content</a>
 					{Header()}
-					<div class="shell">
-						{Sidebar(p, pages)}
+					<div class={shell}>
+						{sidebar}
 						<main id="content">
 							<div class="page-head">
 								<h1>{p.Title}</h1>
 								<p class="lede">{p.Subtitle}</p>
 							</div>
 							{p.Body}
-							{Footer()}
+							{footer}
 						</main>
 					</div>
+					{Group(scripts)}
 				</body>
 			</html>
 		</>
@@ -54,6 +80,7 @@ func Header() Node {
 				<span class="brand-mark">{"<gsx/>"}</span>
 			</a>
 			<nav class="topnav">
+				<a href="./playground.html">Playground</a>
 				<a href="./language.html">Language</a>
 				<a href="./components.html">Components</a>
 				<a href="./live-reload.html">Live reload</a>

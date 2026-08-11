@@ -11,7 +11,7 @@ check: ## Fail if any checked-in generated file is out of date, or any source is
 	go run ./cmd/gsx -check ./...
 	go run ./cmd/gsx fmt -l ./...
 	go generate ./...
-	git diff --exit-code -- '*_tables.go'
+	git diff --exit-code -- '*_tables.go' 'internal/gsx/playground/symbols'
 
 .PHONY: test
 test: ## Run the full test suite
@@ -27,7 +27,7 @@ vet:
 	go vet ./...
 
 .PHONY: ci
-ci: check vet test
+ci: check vet wasm test
 
 .PHONY: ci-extension
 ci-extension: grammar-test extension-test extension-check
@@ -39,6 +39,14 @@ docs: ## Build the documentation site into docs/dist
 .PHONY: docs-serve
 docs-serve: ## Serve the documentation site, re-rendering on every request
 	go run ./docs -serve localhost:8123
+
+.PHONY: docs-prose
+docs-prose: ## Serve the docs without building the playground bundle
+	go run ./docs -serve localhost:8123 -wasm=false
+
+.PHONY: wasm
+wasm: ## Type-check the playground's browser build
+	GOOS=js GOARCH=wasm go build -o /dev/null ./cmd/gsx-wasm
 
 .PHONY: playground
 playground:
