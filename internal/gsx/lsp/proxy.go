@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/kilianc/gsx/internal/gsx/compile"
+	"github.com/kilianc/gsx/internal/gsx/parse"
 )
 
 // Run proxies LSP traffic between the editor (stdin/stdout) and gopls, rewriting .gsx files to
@@ -338,7 +339,34 @@ func mapDefinitionInsideBraces(d *docState, srcLine, srcCh int) (gl, gc int, ok 
 	return gl, gc, true
 }
 
-func makeDiagnosticNotification(uri string, msg string) []byte {
+// makeCompileDiagnostic builds a diagnostic for a GSX compile failure.
+//
+// A *parse.Error knows the exact offset that failed, so the squiggle lands on
+// the offending character instead of at the top of the file. Its rendered form
+// repeats the path and a source snippet, which the editor already shows, so the
+// message is reduced to the bare text.
+func makeCompileDiagnostic(uri string, err error) []byte {
+	line, char := 0, 0
+	msg := err.Error()
+
+	var pe *parse.Error
+	if errors.As(err, &pe) {
+		l, c := pe.Position()
+		// LSP positions are 0-based; parse.Error reports 1-based.
+		line, char = l-1, c-1
+		msg = pe.Msg
+	}
+
+	return makeDiagnosticNotification(uri, line, char, "GSX: "+msg)
+}
+
+func makeDiagnosticNotification(uri string, line, char int, msg string) []byte {
+	if line < 0 {
+		line = 0
+	}
+	if char < 0 {
+		char = 0
+	}
 	diag := map[string]any{
 		"jsonrpc": "2.0",
 		"method":  "textDocument/publishDiagnostics",
@@ -346,8 +374,10 @@ func makeDiagnosticNotification(uri string, msg string) []byte {
 			"uri": uri,
 			"diagnostics": []map[string]any{{
 				"range": map[string]any{
-					"start": map[string]any{"line": 0, "character": 0},
-					"end":   map[string]any{"line": 0, "character": 0},
+					"start": map[string]any{"line": line, "character": char},
+					// A zero-width range renders as a caret; extend by one so the
+					// editor draws a visible squiggle.
+					"end": map[string]any{"line": line, "character": char + 1},
 				},
 				"severity": 1,
 				"source":   "gsx",
@@ -411,7 +441,7 @@ func (s *state) rewriteClientToGopls(raw []byte) ([]byte, error) {
 		if err != nil {
 			goSrc = []byte("package p\n")
 			sm = nil
-			s.setPendingDiagnostic(makeDiagnosticNotification(p.TextDocument.URI, fmt.Sprintf("GSX compile error: %v", err)))
+			s.setPendingDiagnostic(makeCompileDiagnostic(p.TextDocument.URI, err))
 		} else {
 			s.setPendingDiagnostic(makeClearDiagnosticNotification(p.TextDocument.URI))
 		}
@@ -460,7 +490,7 @@ func (s *state) rewriteClientToGopls(raw []byte) ([]byte, error) {
 
 		goSrc, sm, err := compile.CompileFileForLSP(uriToPath(p.TextDocument.URI), []byte(newText))
 		if err != nil {
-			s.setPendingDiagnostic(makeDiagnosticNotification(p.TextDocument.URI, fmt.Sprintf("GSX compile error: %v", err)))
+			s.setPendingDiagnostic(makeCompileDiagnostic(p.TextDocument.URI, err))
 			d := s.getDoc(p.TextDocument.URI)
 			if d == nil {
 				return raw, nil

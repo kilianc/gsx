@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -327,4 +328,76 @@ func mustMarshal(t *testing.T, v any) []byte {
 func rawPtr(b []byte) *json.RawMessage {
 	rm := json.RawMessage(b)
 	return &rm
+}
+
+// A GSX parse error carries an exact offset, so its diagnostic must land on the
+// offending character rather than at the top of the file.
+func TestRewriteDidOpen_ParseErrorIsPositioned(t *testing.T) {
+	st := newState()
+
+	// The mismatched </span> starts at line 4 (0-based 3), byte 28 of that line.
+	src := "package p\n\nfunc Bad() Node {\n\treturn <div class=\"card\">hi</span>\n}\n"
+
+	msg := mustMarshal(t, rpcMsg{
+		JSONRPC: "2.0",
+		Method:  "textDocument/didOpen",
+		Params: rawPtr(mustMarshal(t, map[string]any{
+			"textDocument": map[string]any{
+				"uri":        "file:///test/bad.gsx",
+				"languageId": "gsx",
+				"version":    1,
+				"text":       src,
+			},
+		})),
+	})
+
+	if _, err := st.rewriteClientToGopls(msg); err != nil {
+		t.Fatalf("rewriteClientToGopls: %v", err)
+	}
+
+	diag := st.popPendingDiagnostic()
+	if diag == nil {
+		t.Fatal("expected compile error diagnostic")
+	}
+
+	var diagMsg rpcMsg
+	if err := json.Unmarshal(diag, &diagMsg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	var p struct {
+		Diagnostics []struct {
+			Range struct {
+				Start struct {
+					Line      int `json:"line"`
+					Character int `json:"character"`
+				} `json:"start"`
+				End struct {
+					Line      int `json:"line"`
+					Character int `json:"character"`
+				} `json:"end"`
+			} `json:"range"`
+			Message string `json:"message"`
+		} `json:"diagnostics"`
+	}
+	if err := json.Unmarshal(*diagMsg.Params, &p); err != nil {
+		t.Fatalf("unmarshal params: %v", err)
+	}
+	if len(p.Diagnostics) != 1 {
+		t.Fatalf("expected 1 diagnostic, got %d", len(p.Diagnostics))
+	}
+	d := p.Diagnostics[0]
+
+	if d.Range.Start.Line != 3 || d.Range.Start.Character != 28 {
+		t.Errorf("start = %d:%d, want 3:28", d.Range.Start.Line, d.Range.Start.Character)
+	}
+	if d.Range.End.Character != 29 {
+		t.Errorf("end character = %d, want 29 (non-empty range)", d.Range.End.Character)
+	}
+	if !strings.Contains(d.Message, "mismatched closing tag </span>") {
+		t.Errorf("message = %q", d.Message)
+	}
+	// The snippet and path belong to the CLI renderer, not to an editor squiggle.
+	if strings.Contains(d.Message, "^") || strings.Contains(d.Message, "bad.gsx") {
+		t.Errorf("message should not repeat the path or snippet: %q", d.Message)
+	}
 }
