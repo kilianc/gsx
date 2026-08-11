@@ -16,6 +16,7 @@ import (
 	"github.com/kilianc/gsx/internal/gsx/ast"
 	"github.com/kilianc/gsx/internal/gsx/gomponents"
 	"github.com/kilianc/gsx/internal/gsx/module"
+	"github.com/kilianc/gsx/internal/gsx/parse"
 )
 
 const (
@@ -34,9 +35,20 @@ type compileResult struct {
 }
 
 func compilePipeline(path string, src []byte) (*compileResult, error) {
-	rewritten, mapping, err := rewriteTagsToPlaceholders(src)
+	rewritten, tags, err := parse.RewriteTags(path, src)
 	if err != nil {
 		return nil, err
+	}
+	mapping := make([]placeholder, len(tags))
+	for i, t := range tags {
+		mapping[i] = placeholder{
+			name:     t.Name,
+			node:     t.Node,
+			srcStart: t.SrcStart,
+			srcEnd:   t.SrcEnd,
+			tgtStart: t.TgtStart,
+			tgtEnd:   t.TgtEnd,
+		}
 	}
 	rewritten = normalizeParenWrappedPlaceholder(rewritten)
 
@@ -247,7 +259,6 @@ func resolveImportedFuncTypes(f *goast.File) map[string]string {
 	}
 	return result
 }
-
 
 func parseFuncReturnTypesFromDir(dir string) map[string]string {
 	fset := gotoken.NewFileSet()
@@ -692,7 +703,6 @@ func identName(t goast.Expr) string {
 	return ""
 }
 
-
 func normalizeParenWrappedPlaceholder(src []byte) []byte {
 	// The Go parser doesn't accept some "paren-wrapped expression" forms the way people expect,
 	// e.g.:
@@ -764,60 +774,6 @@ type placeholder struct {
 	// tgtStart/tgtEnd are byte offsets in the rewritten source (tags -> placeholder calls) that correspond to the placeholder call.
 	tgtStart int
 	tgtEnd   int
-}
-
-func rewriteTagsToPlaceholders(src []byte) ([]byte, []placeholder, error) {
-	s := &scanner{src: src}
-	var out strings.Builder
-	var phs []placeholder
-
-	for !s.eof() {
-		if s.startsWith("//") {
-			out.WriteString(s.readLineComment())
-			continue
-		}
-		if s.startsWith("/*") {
-			out.WriteString(s.readBlockComment())
-			continue
-		}
-		switch s.peek() {
-		case '"':
-			out.WriteString(s.readStringLit())
-			continue
-		case '\'':
-			out.WriteString(s.readRuneLit())
-			continue
-		case '`':
-			out.WriteString(s.readRawString())
-			continue
-		case '<':
-			// Disambiguate: treat as tag only if next char is an identifier start.
-			if b := s.peekN(1); isTagStart(b) {
-				srcStart := s.i
-				el, err := parseTagExpr(s)
-				if err != nil {
-					return nil, nil, err
-				}
-				srcEnd := s.i
-				name := "__gsx_expr_" + strconv.Itoa(len(phs)+1)
-				tgtStart := out.Len()
-				out.WriteString(name)
-				out.WriteString("()")
-				tgtEnd := out.Len()
-				phs = append(phs, placeholder{
-					name:     name,
-					node:     el,
-					srcStart: srcStart,
-					srcEnd:   srcEnd,
-					tgtStart: tgtStart,
-					tgtEnd:   tgtEnd,
-				})
-				continue
-			}
-		}
-		out.WriteByte(s.next())
-	}
-	return []byte(out.String()), phs, nil
 }
 
 func ensureImports(f *goast.File, phs []placeholder, qualifyHTML bool) {
@@ -985,7 +941,6 @@ func usesIdent(node goast.Node, name string) bool {
 	})
 	return found
 }
-
 
 type impSpec struct {
 	name string
@@ -1176,314 +1131,6 @@ func isStdImportPath(path string) bool {
 	return !strings.Contains(seg, ".")
 }
 
-
-// --- scanner + GSX tag parsing (subset of previous GSX v0) ---
-
-type scanner struct {
-	src []byte
-	i   int
-}
-
-func (s *scanner) eof() bool { return s.i >= len(s.src) }
-func (s *scanner) peek() byte {
-	if s.eof() {
-		return 0
-	}
-	return s.src[s.i]
-}
-func (s *scanner) peekN(n int) byte {
-	j := s.i + n
-	if j >= len(s.src) {
-		return 0
-	}
-	return s.src[j]
-}
-func (s *scanner) next() byte {
-	if s.eof() {
-		return 0
-	}
-	b := s.src[s.i]
-	s.i++
-	return b
-}
-func (s *scanner) startsWith(prefix string) bool {
-	return bytes.HasPrefix(s.src[s.i:], []byte(prefix))
-}
-func (s *scanner) readLineComment() string {
-	start := s.i
-	for !s.eof() && s.next() != '\n' {
-	}
-	return string(s.src[start:s.i])
-}
-func (s *scanner) readBlockComment() string {
-	start := s.i
-	s.next()
-	s.next()
-	for !s.eof() && !s.startsWith("*/") {
-		s.next()
-	}
-	if s.startsWith("*/") {
-		s.next()
-		s.next()
-	}
-	return string(s.src[start:s.i])
-}
-func (s *scanner) readStringLit() string {
-	start := s.i
-	s.next()
-	for !s.eof() {
-		c := s.next()
-		if c == '\\' {
-			_ = s.next()
-			continue
-		}
-		if c == '"' {
-			break
-		}
-	}
-	return string(s.src[start:s.i])
-}
-func (s *scanner) readRuneLit() string {
-	start := s.i
-	s.next()
-	for !s.eof() {
-		c := s.next()
-		if c == '\\' {
-			_ = s.next()
-			continue
-		}
-		if c == '\'' {
-			break
-		}
-	}
-	return string(s.src[start:s.i])
-}
-func (s *scanner) readRawString() string {
-	start := s.i
-	s.next()
-	for !s.eof() && s.next() != '`' {
-	}
-	return string(s.src[start:s.i])
-}
-
-func isTagStart(b byte) bool {
-	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
-}
-
-func parseTagExpr(s *scanner) (ast.Node, error) {
-	// assumes current is '<' and next is tag start
-	if s.next() != '<' {
-		return nil, fmt.Errorf("internal: expected <")
-	}
-	tagStart := s.i
-	for {
-		b := s.peek()
-		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '-' || b == '.' {
-			s.next()
-			continue
-		}
-		break
-	}
-	tag := string(s.src[tagStart:s.i])
-
-	var attrs []ast.Attr
-	for {
-		skipSpace(s)
-		if s.startsWith("/>") {
-			s.next()
-			s.next()
-			return ast.Element{Tag: tag, Attrs: attrs, SelfClosing: true}, nil
-		}
-		if s.peek() == '>' {
-			s.next()
-			break
-		}
-		// attribute injection: {expr}
-		if s.peek() == '{' {
-			expr, err := readBracedSource(s)
-			if err != nil {
-				return nil, err
-			}
-			expr, err = rewriteTagsInGoExpr(expr)
-			if err != nil {
-				return nil, err
-			}
-			attrs = append(attrs, ast.Attr{Key: "", Kind: ast.AttrExpr, Value: strings.TrimSpace(expr)})
-			continue
-		}
-		attr, err := parseAttr(s)
-		if err != nil {
-			return nil, err
-		}
-		attrs = append(attrs, attr)
-	}
-
-	// children until </tag>
-	var kids []ast.Node
-	for {
-		if s.eof() {
-			return nil, fmt.Errorf("unexpected EOF in <%s>", tag)
-		}
-		if s.startsWith("</") {
-			s.next()
-			s.next()
-			closeStart := s.i
-			for (s.peek() >= 'a' && s.peek() <= 'z') || (s.peek() >= 'A' && s.peek() <= 'Z') || (s.peek() >= '0' && s.peek() <= '9') || s.peek() == '-' || s.peek() == '.' {
-				s.next()
-			}
-			closeTag := string(s.src[closeStart:s.i])
-			skipSpace(s)
-			if s.peek() != '>' {
-				return nil, fmt.Errorf("expected > for </%s>", closeTag)
-			}
-			s.next()
-			if closeTag != tag {
-				return nil, fmt.Errorf("mismatched closing tag </%s> for <%s>", closeTag, tag)
-			}
-			break
-		}
-		if s.peek() == '<' && isTagStart(s.peekN(1)) {
-			n, err := parseTagExpr(s)
-			if err != nil {
-				return nil, err
-			}
-			kids = append(kids, n)
-			continue
-		}
-		if s.peek() == '{' {
-			expr, err := readBracedSource(s)
-			if err != nil {
-				return nil, err
-			}
-			expr, err = rewriteTagsInGoExpr(expr)
-			if err != nil {
-				return nil, err
-			}
-			kids = append(kids, ast.Expr{Src: strings.TrimSpace(expr)})
-			continue
-		}
-		// text
-		txtStart := s.i
-		for !s.eof() {
-			b := s.peek()
-			if b == '<' || b == '{' {
-				break
-			}
-			s.next()
-		}
-		if txtStart < s.i {
-			v := string(s.src[txtStart:s.i])
-			if strings.TrimSpace(v) != "" {
-				kids = append(kids, ast.Text{Value: v})
-			}
-		}
-	}
-
-	return ast.Element{Tag: tag, Attrs: attrs, Children: kids}, nil
-}
-
-func skipSpace(s *scanner) {
-	for {
-		b := s.peek()
-		if b == ' ' || b == '\t' || b == '\n' || b == '\r' {
-			s.next()
-			continue
-		}
-		break
-	}
-}
-
-func parseAttr(s *scanner) (ast.Attr, error) {
-	start := s.i
-	for {
-		b := s.peek()
-		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '-' || b == '_' {
-			s.next()
-			continue
-		}
-		break
-	}
-	key := string(s.src[start:s.i])
-	skipSpace(s)
-
-	if s.peek() == '?' && s.peekN(1) == '=' {
-		return ast.Attr{}, fmt.Errorf("unsupported ?= syntax for attribute %q; use {If(cond, Attr(...))} instead", key)
-	}
-
-	if s.peek() != '=' {
-		return ast.Attr{Key: key, Kind: ast.AttrBool}, nil
-	}
-	s.next()
-	skipSpace(s)
-	switch s.peek() {
-	case '"':
-		s.next()
-		vstart := s.i
-		for !s.eof() && s.peek() != '"' {
-			s.next()
-		}
-		val := string(s.src[vstart:s.i])
-		if s.peek() == '"' {
-			s.next()
-		}
-		return ast.Attr{Key: key, Kind: ast.AttrString, Value: val}, nil
-	case '{':
-		expr, err := readBracedSource(s)
-		if err != nil {
-			return ast.Attr{}, err
-		}
-		expr, err = rewriteTagsInGoExpr(expr)
-		if err != nil {
-			return ast.Attr{}, err
-		}
-		return ast.Attr{Key: key, Kind: ast.AttrExpr, Value: strings.TrimSpace(expr)}, nil
-	default:
-		return ast.Attr{}, fmt.Errorf("expected attr value for %s", key)
-	}
-}
-
-func rewriteTagsInGoExpr(expr string) (string, error) {
-	s := &scanner{src: []byte(expr)}
-	var out strings.Builder
-	for !s.eof() {
-		if s.startsWith("//") {
-			out.WriteString(s.readLineComment())
-			continue
-		}
-		if s.startsWith("/*") {
-			out.WriteString(s.readBlockComment())
-			continue
-		}
-		switch s.peek() {
-		case '"':
-			out.WriteString(s.readStringLit())
-			continue
-		case '\'':
-			out.WriteString(s.readRuneLit())
-			continue
-		case '`':
-			out.WriteString(s.readRawString())
-			continue
-		case '<':
-			if b := s.peekN(1); isTagStart(b) {
-				el, err := parseTagExpr(s)
-				if err != nil {
-					return "", err
-				}
-				ex, err := gomponents.LowerNodes([]ast.Node{el}, gomponents.Context{VarTypes: map[string]string{}})
-				if err != nil {
-					return "", err
-				}
-				clearTokenPos(ex)
-				out.WriteString(formatExpr(ex))
-				continue
-			}
-		}
-		out.WriteByte(s.next())
-	}
-	return out.String(), nil
-}
-
 func formatExpr(e goast.Expr) string {
 	fset := gotoken.NewFileSet()
 	var buf bytes.Buffer
@@ -1542,52 +1189,4 @@ func clearTokenPosRV(v reflect.Value, seen map[uintptr]bool) {
 			clearTokenPosRV(v.Elem(), seen)
 		}
 	}
-}
-
-func readBracedSource(s *scanner) (string, error) {
-	if s.peek() != '{' {
-		return "", fmt.Errorf("expected {")
-	}
-	s.next()
-	start := s.i
-	depth := 1
-	for !s.eof() {
-		b := s.next()
-		switch b {
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return string(s.src[start : s.i-1]), nil
-			}
-		case '"':
-			// skip string literal
-			for !s.eof() {
-				c := s.next()
-				if c == '\\' {
-					_ = s.next()
-					continue
-				}
-				if c == '"' {
-					break
-				}
-			}
-		case '\'':
-			for !s.eof() {
-				c := s.next()
-				if c == '\\' {
-					_ = s.next()
-					continue
-				}
-				if c == '\'' {
-					break
-				}
-			}
-		case '`':
-			for !s.eof() && s.next() != '`' {
-			}
-		}
-	}
-	return "", fmt.Errorf("unexpected EOF in braced expr")
 }
