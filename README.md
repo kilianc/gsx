@@ -2,22 +2,26 @@
   <img src="assets/gsx-logo.svg" alt="GSX logo" width="420" />
 </p>
 
-# gsx
+<p align="center">
+  <strong>Write HTML inline in ordinary Go functions.</strong><br />
+  No template language, no runtime — just Go you can read.
+</p>
+
+<p align="center">
+  <a href="https://kilianc.github.io/gsx/">Documentation</a> ·
+  <a href="https://kilianc.github.io/gsx/language.html">Language reference</a> ·
+  <a href="https://kilianc.github.io/gsx/composition.html">Components</a> ·
+  <a href="https://kilianc.github.io/gsx/live-reload.html">Live reload</a>
+</p>
 
 > [!WARNING]
 > mostly AI generated, not used in production yet, I would not use this if I were you
 
-**GSX** is “JSX-ish for Go”: write normal Go functions in `*.gsx`, with inline HTML-like tag expressions (`<div>...</div>`). Run `gsx` to generate checked-in, `gofmt`’d `*.gsx.go` files.
+---
 
-Under the hood, generated code leverages [`maragu.dev/gomponents`](https://pkg.go.dev/maragu.dev/gomponents) for HTML rendering.
+## Start simple
 
-Debugging is straightforward: the output is just a **well-formatted, human-readable Go file** (using gomponents), so when something looks off you can open the generated `*.gsx.go` and see exactly what will run.
-
-## Example
-
-Start simple: **pure markup** in a normal Go function.
-
-**`hello.gsx`**
+A `.gsx` file is a normal Go file. The only new thing is that a tag is an expression.
 
 ```go
 package ui
@@ -32,81 +36,81 @@ func Hello() Node {
 }
 ```
 
-### Rendered HTML
-
 ```html
 <main class="page"><h1>Hello</h1><p>Welcome to GSX.</p></main>
 ```
 
-But the real power is mixing Go and markup like JSX. GSX is basically **“JSX for Go”**, without claiming 1:1 feature parity.
+## Then mix in Go
 
-**`profile.gsx`**
+Because markup is an expression, everything you already do in Go still works. Loops build
+lists. Conditionals pick branches. Values come from variables and function calls.
+
+There is no template language between you and the page — no `{{range}}`, no partials to
+register, no separate file to keep in sync.
 
 ```go
-package ui
-
-import "strings"
-
 func ProfileCard(name string, tags []string, admin bool) Node {
   var lis []Node
   for _, t := range tags {
     lis = append(lis, <li class="tag">{t}</li>)
   }
 
-  title := strings.TrimSpace(name)
-  badge := ""
-  if admin {
-    badge = "admin"
-  }
-
-  top := (
-    <header class={badge}>
-      <h2>{title}</h2>
-      {If(admin, <span class="pill">admin</span>)}
-    </header>
-  )
-
-  bottom := <ul class="tags">{lis}</ul>
-
   return (
     <section class="card">
-      <div>{top}{bottom}</div>
+      <header>
+        <h2>{strings.TrimSpace(name)}</h2>
+        {If(admin, <span class="pill">admin</span>)}
+      </header>
+      <ul class="tags">{lis}</ul>
     </section>
   )
 }
 ```
 
-## Install
+Props are function parameters, so a typo is a compile error and your editor completes them
+from the signature.
 
-**Published CLI**:
+## And you can read the output
+
+GSX runs ahead of time and writes a `.gsx.go` file next to each source file. You check it
+in and review it like any other code.
+
+```go
+func ProfileCard(name string, tags []string, admin bool) Node {
+	var lis []Node
+	for _, t := range tags {
+		lis = append(lis, html.Li(html.Class("tag"), Text(t)))
+	}
+
+	return html.Section(
+		html.Class("card"),
+		html.Header(
+			html.H2(Text(strings.TrimSpace(name))),
+			If(admin, html.Span(html.Class("pill"), Text("admin"))),
+		),
+		html.Ul(html.Class("tags"), Group(lis)),
+	)
+}
+```
+
+That is the whole trick. When something renders wrong, you open the generated file and read
+exactly what will run — no reflection, no template parser, no interpreter at run time.
+Rendering is [`maragu.dev/gomponents`](https://pkg.go.dev/maragu.dev/gomponents).
+
+## Install
 
 ```bash
 go install github.com/kilianc/gsx/cmd/gsx@latest
 ```
 
-## CLI usage
-
-**Generate for the whole module**:
+## Use
 
 ```bash
-gsx ./...
+gsx ./...          # generate a .gsx.go next to every .gsx
+gsx -check ./...   # CI: fail if any generated file is stale
+gsx dev            # watch, rebuild, restart, reload the browser
+gsx lsp            # language server (started by the editor extension)
 ```
-
-**Generate for one directory (non-recursive)**:
-
-```bash
-gsx ./e2e
-```
-
-This writes `file.gsx.go` next to each `file.gsx`.
-
-**Verify generated files are up to date** (writes nothing, exits non-zero if any are stale):
-
-```bash
-gsx -check ./...
-```
-
-Use this in CI so a `.gsx` edit can never land without its regenerated `.gsx.go`.
 
 ## Live reload
 
@@ -114,219 +118,46 @@ Use this in CI so a `.gsx` edit can never land without its regenerated `.gsx.go`
 gsx dev
 ```
 
-Then open **http://localhost:8080**. On every save, GSX regenerates, restarts your app, waits
-for it to listen again, and reloads the browser.
+Open <http://localhost:8080>. On every save GSX regenerates, restarts your app, waits for
+it to accept connections, and reloads the browser.
 
 That last part matters: a Go server has to be rebuilt and restarted before a refresh shows
-anything new, so `gsx dev` supervises your app rather than only watching files. A reload
-fired before the new process is listening would just show a connection error.
+anything new, so `gsx dev` supervises your app rather than only watching files.
 
-```bash
-gsx dev \
-  -run "go run ./cmd/server" \   # how to build and start your app
-  -app-addr localhost:3000 \     # where your app listens
-  -addr localhost:8080           # where to point your browser
-```
+**Your application needs no changes.** The reload client is injected by a proxy on the way
+through, so nothing in your code refers to GSX and a production build cannot ship a dev
+client. Build failures appear as a full-page overlay with the same `file:line:col` message
+and source snippet you get on the terminal.
 
-**Your application needs no changes.** `gsx dev` proxies to it and injects the reload
-client into HTML responses on the way through, so nothing in your code refers to GSX and a
-production build cannot accidentally ship a dev client.
+## What the syntax covers
 
-If a build fails, the error is pushed to the browser as a full-page overlay — the same
-`file:line:col` message and source snippet you get on the terminal — and the page keeps
-showing it until the next successful build.
+| | |
+|---|---|
+| Tags | `<div class="x">…</div>`, `<input />` |
+| Fragments | `<>…</>` |
+| Splices | `{expr}` — a `string`, `Node`, or `[]Node` |
+| Components | `<Card>`, `<ui.Card>`, `<ui.widgets.Card>` |
+| Typed props | `<Badge text="Active" variant="success" />` |
+| Comments | `{/* dropped at compile time */}` |
+| JSX attributes | `className`, `htmlFor`, `maxLength`, … |
+| Spread | `<span {...attrs}>` |
+| Conditional attributes | `<input disabled={locked} />` |
+| Entities | `&amp;`, `&#65;`, `&eacute;` decoded at compile time |
 
-While the app is restarting, the proxy serves a placeholder that also carries the reload
-client, so a tab that lands mid-restart recovers on its own instead of showing a browser
-error page.
+Text follows JSX's whitespace rules, so indented markup renders the way it reads.
 
-## GSX syntax
+Full details in the [language reference](https://kilianc.github.io/gsx/language.html).
 
-`*.gsx` files are **Go code** with one extra expression form:
+## Editors
 
-- **Tag expressions**: `<tag ...attrs...> ...children... </tag>` and self-closing `<input ... />`
-- **Fragments**: `<>...</>` groups siblings without emitting a wrapper element
-- **Go expression splices**: `{expr}` inside children or attribute positions
-  - Child `{expr}` must be a `string`, a `Node`, or a `[]Node` (slices are auto-wrapped as `Group(slice)`).
-  - Attribute expressions must typecheck as expected by gomponents helpers (e.g. `class={s}` becomes `Class(s)`).
-- **Comments**: `{/* ... */}` is dropped at compile time, in both child and attribute position
+`gsx lsp` proxies `gopls`, compiling the buffer to a virtual Go view and mapping positions
+back, so `.gsx` files get diagnostics, hover, go-to-definition and completion. GSX's own
+parse errors are reported on the offending character.
 
-### Attributes
+A VS Code / Cursor extension lives in [`vscode/gsx-vscode/`](vscode/gsx-vscode). See the
+[editor setup guide](https://kilianc.github.io/gsx/editors.html).
 
-Attribute names accept both the HTML spelling and the **JSX spelling**, so pasted JSX
-compiles and muscle memory doesn't produce a silently wrong attribute:
-
-```go
-<label htmlFor="email">Email</label>          // → for="email"
-<div className="card">…</div>                 // → class="card"
-<input autoComplete="off" maxLength="120" />  // → autocomplete, maxlength
-```
-
-Names are matched case-insensitively, and `data-*` / `aria-*` pass through as written.
-
-**Spread attributes** apply a prebuilt `[]Node` of attributes to an element:
-
-```go
-func sharedAttrs() []Node {
-  return []Node{Attr("class", "shared"), Attr("data-kind", "demo")}
-}
-
-<span {...sharedAttrs()}>one</span>
-<button type="button" {...sharedAttrs()} disabled>two</button>
-```
-
-> Inside plain Go — a helper like `sharedAttrs` above — `gomponents/html` helpers need an
-> explicit `html.` prefix (`html.Class("x")`). Bare names are only resolved inside tag
-> expressions and `{...}` splices.
-
-### Fragments
-
-Two sibling tags can't sit adjacent in one Go expression — but a fragment can wrap them:
-
-```go
-func Header() Node {
-  return (
-    <>
-      <h1>Title</h1>
-      <p>Subtitle</p>
-    </>
-  )
-}
-```
-
-This compiles to `Group{html.H1(...), html.P(...)}`, which renders both children with no
-enclosing element.
-
-### Text, whitespace and entities
-
-Literal text follows **JSX's rules**, so markup renders the way it reads:
-
-```go
-<p>
-  This sentence is written
-  across three source lines
-  but renders as one.
-</p>
-```
-
-```html
-<p>This sentence is written across three source lines but renders as one.</p>
-```
-
-Concretely: a run of text containing a line break has each line trimmed, blank lines
-dropped, and the rest joined with a single space. A run **without** a line break is kept
-byte for byte, so inline spacing survives:
-
-```go
-<p><b>bold</b> then <i>italic</i></p>   // the spaces around "then" are preserved
-```
-
-**HTML entities are decoded at compile time**, then escaped again on render — so what you
-write is what the reader sees:
-
-```go
-<p>Tom &amp; Jerry &lt;3 caf&eacute;</p>
-```
-
-```html
-<p>Tom &amp; Jerry &lt;3 café</p>
-```
-
-Only well-formed references (`&name;`, `&#65;`, `&#x41;`) are decoded. Unlike a browser,
-GSX will not decode a reference missing its semicolon, so `?page=1&next=2` and `AT&T`
-survive untouched.
-
-### Components
-
-Like JSX, **uppercase tags** invoke Go functions instead of emitting HTML elements:
-
-```go
-func Card(children ...Node) Node {
-  return <div class="card">{children}</div>
-}
-
-func Page() Node {
-  return <Card class="primary"><p>Hello</p></Card>
-}
-```
-
-This generates `Card(Class("primary"), P(Text("Hello")))` — attributes and children are passed as `...Node` arguments, the same way gomponents HTML helpers work.
-
-**Dotted tags** call qualified functions from imported packages, including nested ones
-(`<ui.widgets.Card>`):
-
-```go
-import "myapp/ui"
-
-func Page() Node {
-  return <ui.Card><p>Hello</p></ui.Card>
-}
-```
-
-**Convention**: lowercase tags (`<div>`, `<span>`) are always HTML elements. Uppercase tags (`<Card>`, `<ui.Card>`) are always component function calls.
-
-### Typed props
-
-Components can accept **typed parameters** (not just `...Node` children). Attributes are mapped to function parameters by name:
-
-```go
-func SectionHeading(text string) Node {
-  return <h2>{text}</h2>
-}
-
-func Badge(text string, variant string) Node {
-  return <span class={"badge badge-" + variant}>{text}</span>
-}
-```
-
-Use them just like JSX props:
-
-```go
-<SectionHeading text="Debug" />
-<Badge text="Active" variant="success" />
-```
-
-This compiles to `SectionHeading("Debug")` and `Badge("Active", "success")`.
-
-Any Go type works as a prop — `time.Time`, `sql.NullString`, custom structs, pointers, slices, etc.:
-
-```go
-import "time"
-
-func CellTime(t time.Time) Node {
-  return <td>{t.Format(time.RFC3339)}</td>
-}
-```
-
-```go
-<CellTime t={row.CreatedAt} />
-// compiles to: CellTime(row.CreatedAt)
-```
-
-**Mixed props and children** work too — typed parameters come from attributes, `...Node` children come from the body:
-
-```go
-func SectionWithHeading(heading string, children ...Node) Node {
-  return <section><h2>{heading}</h2>{children}</section>
-}
-```
-
-```go
-<SectionWithHeading heading="Tasks">
-  <p>content here</p>
-</SectionWithHeading>
-// compiles to: SectionWithHeading("Tasks", P(Text("content here")))
-```
-
-### Notes
-
-- Components are normal Go `func`s and must have an explicit `return ...`.
-- You can’t place two sibling tag expressions adjacent in one Go expression; wrap them in a
-  parent tag (`return <div>{a}{b}</div>`) or a fragment (`return <>{a}{b}</>`).
-
-## Public API
-
-If you want to embed compilation in your own tooling, use `gsx.CompileFile`:
+## Embedding the compiler
 
 ```go
 import "github.com/kilianc/gsx/pkg/gsx"
@@ -334,62 +165,24 @@ import "github.com/kilianc/gsx/pkg/gsx"
 out, err := gsx.CompileFile("page.gsx", src)
 ```
 
-The internal compiler lives under `internal/gsx/...` and is not part of the public API.
+The internal compiler under `internal/gsx/...` is not part of the public API.
 
-## Tests
-
-```bash
-make ci
-```
-
-That runs three things:
-
-1. `gsx -check ./...` — every checked-in `*.gsx.go` must match what the compiler produces right now.
-2. `go vet ./...`
-3. `go test ./...`
-
-The `e2e/` package uses strict golden tests:
-
-- **`*.gsx.go` is the golden generated Go.** It is not a separate copy of the expected
-  output — it is the real generated file, and it is compiled into the test binary. A
-  golden that does not build fails the package build.
-- **`*.html.out` is the expected rendered HTML.** A fixture opts in by registering itself:
-
-  ```go
-  func init() {
-    GSXFunctions["my_fixture"] = func() Node { return MyFixture() }
-  }
-  ```
-
-After changing the compiler, refresh both kinds of golden with:
+## Developing
 
 ```bash
-make golden
+make ci       # check generated files, vet, test
+make golden   # regenerate goldens after a compiler change, then test
+make docs     # build the documentation site into docs/dist
 ```
 
-Then read the diff before committing — that diff *is* the review surface for a compiler change.
+The `e2e/` package uses strict golden tests. The generated `*.gsx.go` **is** the golden —
+it is compiled into the test binary, so a golden that does not build fails the package
+build. `*.html.out` holds the expected rendered HTML for fixtures that register themselves
+in `GSXFunctions`.
 
-## Editor setup (Cursor/VS Code)
+After a compiler change, run `make golden` and read the diff. That diff is the review
+surface.
 
-### Quick + simple (highlighting only)
-
-To treat `*.gsx` as Go in the editor (syntax highlighting), add:
-
-```json
-{
-  "files.associations": {
-    "*.gsx": "go"
-  }
-}
-```
-
-### Full IDE features (gopls-backed LSP)
-
-GSX now includes a **`gsx lsp`** mode that proxies `gopls` and rewrites `*.gsx` to a virtual Go view so you get Go-like:
-
-- diagnostics (lint/typecheck)
-- completion
-- hover
-- go-to-definition
-
-There’s also a thin VS Code extension under `vscode/gsx-vscode/` that runs `gsx lsp`.
+The [documentation site](https://kilianc.github.io/gsx/) is itself written in GSX
+([`docs/`](docs)), and every code sample on it is compiled by the version of GSX that built
+the page — so the docs cannot drift from the compiler.

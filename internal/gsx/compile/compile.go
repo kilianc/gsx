@@ -7,6 +7,7 @@ import (
 	"go/format"
 	"go/parser"
 	gotoken "go/token"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -82,6 +83,7 @@ func compilePipeline(path string, src []byte) (*compileResult, error) {
 		FuncReturnTypes: funcReturnTypes,
 		FuncParams:      funcParams,
 		HTMLPrefix:      htmlPrefix,
+		LocalNames:      collectPackageNames(path, af),
 	}
 
 	for i := range mapping {
@@ -989,15 +991,12 @@ func replaceAllWithIndent(src, needle, replacement string) string {
 	return b.String()
 }
 
+// applyIndent re-indents a multi-line replacement to sit at the call site.
 func applyIndent(prefix, s string) string {
 	if !strings.Contains(s, "\n") {
 		return s
 	}
-	lines := strings.Split(s, "\n")
-	for i := 1; i < len(lines); i++ {
-		lines[i] = prefix + lines[i]
-	}
-	return strings.Join(lines, "\n")
+	return indentCode(s, prefix, false)
 }
 
 func prettyExpr(e goast.Expr, maxLen int, depth int) string {
@@ -1081,19 +1080,110 @@ func oneLineGoExpr(e goast.Expr) string {
 	fset := gotoken.NewFileSet()
 	var buf bytes.Buffer
 	_ = format.Node(&buf, fset, e)
-	return strings.Join(strings.Fields(strings.TrimSpace(buf.String())), " ")
+	return oneLineFromMaybeMulti(buf.String())
 }
 
+// oneLineFromMaybeMulti collapses printed Go onto a single line.
+//
+// It must not touch the inside of a literal: a raw string carrying SQL, JSON,
+// a script block or a code sample has significant newlines, and collapsing them
+// silently corrupts the program's data.
 func oneLineFromMaybeMulti(s string) string {
-	return strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
+	return collapseOutsideLiterals(strings.TrimSpace(s))
+}
+
+// collapseOutsideLiterals replaces runs of whitespace with a single space,
+// copying string, rune and raw-string literals through untouched.
+func collapseOutsideLiterals(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+
+	inSpace := false
+	for i := 0; i < len(s); {
+		switch c := s[i]; c {
+		case '"', '\'', '`':
+			inSpace = false
+			n := literalLen(s, i)
+			b.WriteString(s[i : i+n])
+			i += n
+		case ' ', '\t', '\n', '\r':
+			if !inSpace {
+				b.WriteByte(' ')
+				inSpace = true
+			}
+			i++
+		default:
+			inSpace = false
+			b.WriteByte(c)
+			i++
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// literalLen returns the length of the Go literal starting at i.
+func literalLen(s string, i int) int {
+	q := s[i]
+	if q == '`' {
+		if j := strings.IndexByte(s[i+1:], '`'); j >= 0 {
+			return j + 2
+		}
+		return len(s) - i
+	}
+	for n := 1; i+n < len(s); {
+		switch s[i+n] {
+		case '\\':
+			n += 2
+		case q:
+			return n + 1
+		default:
+			n++
+		}
+	}
+	return len(s) - i
 }
 
 func indentLines(s, indent string) string {
-	lines := strings.Split(s, "\n")
-	for i := range lines {
-		lines[i] = indent + lines[i]
+	return indentCode(s, indent, true)
+}
+
+// indentCode prefixes each line of printed Go with indent.
+//
+// Lines inside a raw string literal are left alone: their content is data, and
+// prefixing it would silently rewrite whatever the literal holds — embedded
+// SQL, JSON, a script block, a code sample. Everything else only has to be
+// close enough to parse, since the final gofmt pass fixes the layout.
+func indentCode(s, indent string, first bool) string {
+	var b strings.Builder
+	b.Grow(len(s) + len(indent))
+
+	if first {
+		b.WriteString(indent)
 	}
-	return strings.Join(lines, "\n")
+
+	inRaw := false
+	for i := 0; i < len(s); {
+		switch c := s[i]; {
+		case c == '`':
+			inRaw = !inRaw
+			b.WriteByte(c)
+			i++
+		case !inRaw && (c == '"' || c == '\''):
+			n := literalLen(s, i)
+			b.WriteString(s[i : i+n])
+			i += n
+		case c == '\n':
+			b.WriteByte(c)
+			if !inRaw {
+				b.WriteString(indent)
+			}
+			i++
+		default:
+			b.WriteByte(c)
+			i++
+		}
+	}
+	return b.String()
 }
 
 func formatImportGroups(src string) string {
@@ -1172,8 +1262,9 @@ func formatExpr(e goast.Expr) string {
 	var buf bytes.Buffer
 	_ = format.Node(&buf, fset, e)
 	// Keep embedded expressions single-line to avoid go/printer inserting odd blank lines
-	// when the expression later gets parsed as part of a larger file.
-	return strings.Join(strings.Fields(strings.TrimSpace(buf.String())), " ")
+	// when the expression later gets parsed as part of a larger file. Literals are
+	// left alone so their contents survive intact.
+	return oneLineFromMaybeMulti(buf.String())
 }
 
 func clearTokenPos(n any) {
@@ -1223,6 +1314,103 @@ func clearTokenPosRV(v reflect.Value, seen map[uintptr]bool) {
 	case reflect.Interface:
 		if !v.IsNil() {
 			clearTokenPosRV(v.Elem(), seen)
+		}
+	}
+}
+
+// collectPackageNames returns every top-level name declared in the package
+// directory containing path.
+//
+// These names shadow gomponents/html exports. Without this, a component named
+// Section, Code or Header — all perfectly ordinary names that happen to be HTML
+// elements — has its call sites rewritten to html.Section, html.Code and
+// html.Header inside `{...}` splices, and the generated file does not compile.
+//
+// Sibling `.gsx` files are included, because a component is normally defined in
+// one file of a package and used from another. Their tags are rewritten to
+// placeholders first so go/parser accepts them.
+func collectPackageNames(path string, current *goast.File) map[string]bool {
+	names := map[string]bool{}
+	addDecls(names, current)
+
+	dir := filepath.Dir(path)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return names
+	}
+
+	self := filepath.Base(path)
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if name == self || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		// Generated output is derived from the `.gsx` beside it, which is read
+		// below. Reading it too would double the work and could use stale
+		// content mid-regeneration.
+		if strings.HasSuffix(name, ".gsx.go") {
+			continue
+		}
+
+		isGSX := strings.HasSuffix(name, ".gsx")
+		if !isGSX && !strings.HasSuffix(name, ".go") {
+			continue
+		}
+
+		src, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			continue
+		}
+		if isGSX {
+			rewritten, _, err := parse.RewriteTags(name, src)
+			if err != nil {
+				// A sibling that does not parse yet should not stop this file
+				// from compiling; its names are simply unknown for now.
+				continue
+			}
+			src = normalizeParenWrappedPlaceholder(rewritten)
+		}
+
+		f, err := parser.ParseFile(gotoken.NewFileSet(), name, src, parser.SkipObjectResolution)
+		if err != nil {
+			continue
+		}
+		addDecls(names, f)
+	}
+	return names
+}
+
+func addDecls(into map[string]bool, f *goast.File) {
+	if f == nil {
+		return
+	}
+	for _, decl := range f.Decls {
+		switch d := decl.(type) {
+		case *goast.FuncDecl:
+			if d.Recv == nil {
+				into[d.Name.Name] = true
+			}
+		case *goast.GenDecl:
+			for _, spec := range d.Specs {
+				switch s := spec.(type) {
+				case *goast.TypeSpec:
+					into[s.Name.Name] = true
+				case *goast.ValueSpec:
+					for _, n := range s.Names {
+						into[n.Name] = true
+					}
+				case *goast.ImportSpec:
+					// An import's local name shadows too.
+					if s.Name != nil && s.Name.Name != "." && s.Name.Name != "_" {
+						into[s.Name.Name] = true
+					} else if s.Name == nil {
+						into[filepath.Base(strings.Trim(s.Path.Value, `"`))] = true
+					}
+				}
+			}
 		}
 	}
 }

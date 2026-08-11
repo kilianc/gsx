@@ -178,3 +178,49 @@ func TestHTMLExportsHasNoPhantoms(t *testing.T) {
 		}
 	}
 }
+
+// A local declaration must shadow a gomponents/html export of the same name,
+// exactly as it would in ordinary Go. Without this, a component called Section
+// or Code has its call sites inside `{...}` rewritten to html.Section and
+// html.Code, and the generated file does not compile.
+func TestLocalNamesShadowHTMLExports(t *testing.T) {
+	expr := ast.Expr{Src: `Section(Code("x"))`}
+
+	t.Run("without local declarations", func(t *testing.T) {
+		got, err := lowerNode(expr, Context{HTMLPrefix: "html"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s := render(t, got); s != `html.Section(html.Code("x"))` {
+			t.Errorf("got %s", s)
+		}
+	})
+
+	t.Run("with local declarations", func(t *testing.T) {
+		ctx := Context{
+			HTMLPrefix: "html",
+			LocalNames: map[string]bool{"Section": true, "Code": true},
+		}
+		got, err := lowerNode(expr, ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s := render(t, got); s != `Section(Code("x"))` {
+			t.Errorf("got %s, want the local declarations to win", s)
+		}
+	})
+
+	t.Run("shadowing is per name", func(t *testing.T) {
+		ctx := Context{
+			HTMLPrefix: "html",
+			LocalNames: map[string]bool{"Section": true},
+		}
+		got, err := lowerNode(expr, ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s := render(t, got); s != `Section(html.Code("x"))` {
+			t.Errorf("got %s", s)
+		}
+	})
+}
