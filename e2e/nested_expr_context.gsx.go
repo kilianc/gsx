@@ -28,7 +28,7 @@ func NestedExprContext(show bool) Node {
 		If(show, html.P(node)),
 		If(show, html.Ul(Group(nodes))),
 		If(show, html.Span(Text(str))),
-		If(show, El("em", helpers.MakeNode("from-pkg"))),
-		If(show, El("b", Text(helpers.MakeString("str-from-pkg")))),
+		If(show, html.Em(helpers.MakeNode("from-pkg"))),
+		If(show, html.B(Text(helpers.MakeString("str-from-pkg")))),
 	)
 }

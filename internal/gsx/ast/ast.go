@@ -48,6 +48,9 @@ const (
 	// AttrExpr is a Go splice: `class={s}`. A bare `{expr}` in attribute
 	// position — an attribute-node injection — is an AttrExpr with an empty Key.
 	AttrExpr
+	// AttrSpread is `{...expr}`, where expr is a []Node of attributes to apply.
+	// Value holds the expression with the leading `...` removed.
+	AttrSpread
 )
 
 // Attr is a single attribute in a start tag.
