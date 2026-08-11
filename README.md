@@ -108,6 +108,38 @@ gsx -check ./...
 
 Use this in CI so a `.gsx` edit can never land without its regenerated `.gsx.go`.
 
+## Live reload
+
+```bash
+gsx dev
+```
+
+Then open **http://localhost:8080**. On every save, GSX regenerates, restarts your app, waits
+for it to listen again, and reloads the browser.
+
+That last part matters: a Go server has to be rebuilt and restarted before a refresh shows
+anything new, so `gsx dev` supervises your app rather than only watching files. A reload
+fired before the new process is listening would just show a connection error.
+
+```bash
+gsx dev \
+  -run "go run ./cmd/server" \   # how to build and start your app
+  -app-addr localhost:3000 \     # where your app listens
+  -addr localhost:8080           # where to point your browser
+```
+
+**Your application needs no changes.** `gsx dev` proxies to it and injects the reload
+client into HTML responses on the way through, so nothing in your code refers to GSX and a
+production build cannot accidentally ship a dev client.
+
+If a build fails, the error is pushed to the browser as a full-page overlay — the same
+`file:line:col` message and source snippet you get on the terminal — and the page keeps
+showing it until the next successful build.
+
+While the app is restarting, the proxy serves a placeholder that also carries the reload
+client, so a tab that lands mid-restart recovers on its own instead of showing a browser
+error page.
+
 ## GSX syntax
 
 `*.gsx` files are **Go code** with one extra expression form:
