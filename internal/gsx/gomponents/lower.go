@@ -100,9 +100,43 @@ func lowerNode(n ast.Node, ctx Context) (goast.Expr, error) {
 		return call(goast.NewIdent("Text"), ex), nil
 	case ast.Element:
 		return lowerElement(t, ctx)
+	case ast.Fragment:
+		return lowerFragment(t, ctx)
 	default:
 		return nil, fmt.Errorf("unsupported node type %T", n)
 	}
+}
+
+// lowerFragment lowers `<>...</>` to a Group, which renders its children with
+// no wrapping element.
+func lowerFragment(f ast.Fragment, ctx Context) (goast.Expr, error) {
+	elts := make([]goast.Expr, 0, len(f.Children))
+	for _, c := range f.Children {
+		ex, err := lowerNode(c, ctx)
+		if err != nil {
+			return nil, err
+		}
+		elts = append(elts, ex)
+	}
+	// Group{} for an empty fragment renders nothing, which is what `<></>` means.
+	return &goast.CompositeLit{Type: goast.NewIdent("Group"), Elts: elts}, nil
+}
+
+// tagFunc builds the callee for a component tag, turning a dotted name into a
+// proper selector chain.
+//
+// `ui.widgets.Card` must become SelectorExpr(SelectorExpr(ui, widgets), Card).
+// Splitting only on the first dot yields a selector whose Sel is an identifier
+// literally named "widgets.Card"; it prints correctly but is not a valid tree,
+// so every later walk over it — import detection, html qualification, nested
+// substitution — sees the wrong shape.
+func tagFunc(tag string) goast.Expr {
+	parts := strings.Split(tag, ".")
+	var fun goast.Expr = goast.NewIdent(parts[0])
+	for _, part := range parts[1:] {
+		fun = &goast.SelectorExpr{X: fun, Sel: goast.NewIdent(part)}
+	}
+	return fun
 }
 
 func IsLikelyNodeExpr(ex goast.Expr, ctx Context) bool {
@@ -174,16 +208,7 @@ func lowerElement(el ast.Element, ctx Context) (goast.Expr, error) {
 	// instead of wrapping attribute values in Attr()/Class()/etc.
 	if ctx.FuncParams != nil {
 		if params, ok := ctx.FuncParams[el.Tag]; ok && hasTypedParams(params) {
-			var fun goast.Expr
-			if dot := strings.IndexByte(el.Tag, '.'); dot >= 0 {
-				fun = &goast.SelectorExpr{
-					X:   goast.NewIdent(el.Tag[:dot]),
-					Sel: goast.NewIdent(el.Tag[dot+1:]),
-				}
-			} else {
-				fun = goast.NewIdent(el.Tag)
-			}
-			return lowerTypedComponent(el, fun, params, ctx)
+			return lowerTypedComponent(el, tagFunc(el.Tag), params, ctx)
 		}
 	}
 
@@ -204,12 +229,8 @@ func lowerElement(el ast.Element, ctx Context) (goast.Expr, error) {
 		args = append(args, cx)
 	}
 
-	if dot := strings.IndexByte(el.Tag, '.'); dot >= 0 {
-		fun := &goast.SelectorExpr{
-			X:   goast.NewIdent(el.Tag[:dot]),
-			Sel: goast.NewIdent(el.Tag[dot+1:]),
-		}
-		return call(fun, args...), nil
+	if strings.Contains(el.Tag, ".") {
+		return call(tagFunc(el.Tag), args...), nil
 	}
 	if len(el.Tag) > 0 && el.Tag[0] >= 'A' && el.Tag[0] <= 'Z' {
 		return call(goast.NewIdent(el.Tag), args...), nil

@@ -1004,9 +1004,45 @@ func prettyExpr(e goast.Expr, maxLen int, depth int) string {
 	switch t := e.(type) {
 	case *goast.CallExpr:
 		return prettyCall(t, maxLen, depth)
+	case *goast.CompositeLit:
+		return prettyCompositeLit(t, maxLen, depth)
 	default:
 		return oneLineGoExpr(e)
 	}
+}
+
+// prettyCompositeLit lays out a composite literal the same way prettyCall lays
+// out a call, so a fragment's `Group{...}` breaks across lines instead of
+// running off the edge of the file.
+func prettyCompositeLit(c *goast.CompositeLit, maxLen int, depth int) string {
+	typ := ""
+	if c.Type != nil {
+		typ = oneLineGoExpr(c.Type)
+	}
+
+	var eltOnes []string
+	hasMulti := false
+	for _, e := range c.Elts {
+		es := prettyExpr(e, maxLen, depth+1)
+		if strings.Contains(es, "\n") {
+			hasMulti = true
+		}
+		eltOnes = append(eltOnes, oneLineFromMaybeMulti(es))
+	}
+	one := typ + "{" + strings.Join(eltOnes, ", ") + "}"
+	if !hasMulti && len(one) <= maxLen {
+		return one
+	}
+
+	var b strings.Builder
+	b.WriteString(typ)
+	b.WriteString("{\n")
+	for _, e := range c.Elts {
+		b.WriteString(indentLines(prettyExpr(e, maxLen, depth+1), "\t"))
+		b.WriteString(",\n")
+	}
+	b.WriteString("}")
+	return b.String()
 }
 
 func prettyCall(c *goast.CallExpr, maxLen int, depth int) string {
