@@ -100,6 +100,14 @@ gsx ./e2e
 
 This writes `file.gsx.go` next to each `file.gsx`.
 
+**Verify generated files are up to date** (writes nothing, exits non-zero if any are stale):
+
+```bash
+gsx -check ./...
+```
+
+Use this in CI so a `.gsx` edit can never land without its regenerated `.gsx.go`.
+
 ## GSX syntax
 
 `*.gsx` files are **Go code** with one extra expression form:
@@ -210,13 +218,35 @@ The internal compiler lives under `internal/gsx/...` and is not part of the publ
 ## Tests
 
 ```bash
-go test ./...
+make ci
 ```
+
+That runs three things:
+
+1. `gsx -check ./...` — every checked-in `*.gsx.go` must match what the compiler produces right now.
+2. `go vet ./...`
+3. `go test ./...`
 
 The `e2e/` package uses strict golden tests:
 
-- `*.gsx.out` is expected generated Go
-- `*.html.out` is expected rendered HTML for registered fixtures
+- **`*.gsx.go` is the golden generated Go.** It is not a separate copy of the expected
+  output — it is the real generated file, and it is compiled into the test binary. A
+  golden that does not build fails the package build.
+- **`*.html.out` is the expected rendered HTML.** A fixture opts in by registering itself:
+
+  ```go
+  func init() {
+    GSXFunctions["my_fixture"] = func() Node { return MyFixture() }
+  }
+  ```
+
+After changing the compiler, refresh both kinds of golden with:
+
+```bash
+make golden
+```
+
+Then read the diff before committing — that diff *is* the review surface for a compiler change.
 
 ## Editor setup (Cursor/VS Code)
 

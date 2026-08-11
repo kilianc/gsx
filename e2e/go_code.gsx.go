@@ -8,12 +8,11 @@ import (
 
 	. "maragu.dev/gomponents"
 	html "maragu.dev/gomponents/html"
-	"math/rand"
 )
 
 func init() {
 	GSXFunctions["go_code"] = func() Node {
-		rand.Seed(1)
+		classSeq = 0
 		return GoCode()
 	}
 }
@@ -40,16 +39,21 @@ func GoCode() Node {
 	bottomClass := "bottom"
 	bottom := html.Div(
 		html.Class(bottomClass),
-		html.P(html.Class(getRandomClass()), Text("hello")),
-		html.P(html.Class(getRandomClass()), Text(hello)),
-		html.Ul(html.Class(getRandomClass()), Group(lis)),
+		html.P(html.Class(nextClass()), Text("hello")),
+		html.P(html.Class(nextClass()), Text(hello)),
+		html.Ul(html.Class(nextClass()), Group(lis)),
 	)
 
 	return html.Div(top, bottom)
 }
 
-func getRandomClass() string {
-	return fmt.Sprintf("class-%d", rand.Intn(100))
+// classSeq keeps this fixture's output deterministic: the point is to exercise a
+// plain Go function call in an attribute expression, not randomness.
+var classSeq int
+
+func nextClass() string {
+	classSeq++
+	return fmt.Sprintf("class-%d", classSeq)
 }
 
 func listItems(colors []string) []Node {
