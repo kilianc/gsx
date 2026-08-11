@@ -1,0 +1,7 @@
+<div><style>
+.card {
+  color: red;
+}
+</style><pre>line one
+	line two, tab indented
+line three</pre></div>

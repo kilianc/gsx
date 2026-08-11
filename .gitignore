@@ -3,6 +3,9 @@
 /dist/
 *.vsix
 
+# Rendered documentation site (built by CI, deployed to Pages)
+/docs/dist/
+
 # Editor extension build artifacts
 vscode/gsx-vscode/node_modules/
 vscode/gsx-vscode/dist/

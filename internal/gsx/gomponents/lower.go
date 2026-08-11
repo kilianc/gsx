@@ -21,6 +21,11 @@ type Context struct {
 	FuncReturnTypes map[string]string      // "pkg.Func" → "string" | "Node", resolved via go/importer
 	FuncParams      map[string][]FuncParam // "pkg.Func" → ordered param list
 	HTMLPrefix      string                 // when non-empty, qualify gomponents/html calls (e.g. "html")
+	// LocalNames are top-level names declared in the package being compiled.
+	// An identifier in this set is never rewritten to html.Name, so a component
+	// called Section or Code shadows the gomponents/html function of that name
+	// exactly as it would in ordinary Go.
+	LocalNames map[string]bool
 }
 
 func (ctx Context) htmlIdent(name string) goast.Expr {
@@ -339,7 +344,10 @@ func lowerAttrValue(a ast.Attr, ctx Context) (goast.Expr, error) {
 func parseSplice(src string, nested map[string]ast.Node, ctx Context) (goast.Expr, error) {
 	ex, err := parser.ParseExpr(src)
 	if err != nil {
-		return nil, fmt.Errorf("invalid expression %q: %w", src, err)
+		// Quoting the whole splice is useless once it spans more than a line:
+		// the reader gets a wall of escaped source with the actual problem
+		// buried in it. Show the first line and let go/parser say where.
+		return nil, fmt.Errorf("invalid expression in {...}: %w\n\n\t%s", err, firstLine(src))
 	}
 	if len(nested) > 0 {
 		if ex, err = substituteNested(ex, nested, ctx); err != nil {
@@ -351,6 +359,18 @@ func parseSplice(src string, nested map[string]ast.Node, ctx Context) (goast.Exp
 
 // substituteNested replaces each `__gsx_sub_N()` placeholder call with the
 // lowered form of the tag it stands for.
+// firstLine abbreviates a splice for an error message.
+func firstLine(src string) string {
+	src = strings.TrimSpace(src)
+	if i := strings.IndexByte(src, '\n'); i >= 0 {
+		return src[:i] + " …"
+	}
+	if len(src) > 120 {
+		return src[:120] + " …"
+	}
+	return src
+}
+
 func substituteNested(root goast.Expr, nested map[string]ast.Node, ctx Context) (goast.Expr, error) {
 	var firstErr error
 
@@ -571,72 +591,72 @@ func (ctx Context) qualifyHTMLInExpr(expr goast.Expr) goast.Expr {
 	if ctx.HTMLPrefix == "" {
 		return expr
 	}
-	return qualifyHTMLWalk(expr, ctx.HTMLPrefix)
+	return qualifyHTMLWalk(expr, ctx.HTMLPrefix, ctx.LocalNames)
 }
 
-func qualifyHTMLWalk(expr goast.Expr, prefix string) goast.Expr {
+func qualifyHTMLWalk(expr goast.Expr, prefix string, local map[string]bool) goast.Expr {
 	if expr == nil {
 		return nil
 	}
 	switch e := expr.(type) {
 	case *goast.Ident:
-		if htmlExports[e.Name] {
+		if htmlExports[e.Name] && !local[e.Name] {
 			return &goast.SelectorExpr{
 				X:   goast.NewIdent(prefix),
 				Sel: goast.NewIdent(e.Name),
 			}
 		}
 	case *goast.CallExpr:
-		e.Fun = qualifyHTMLWalk(e.Fun, prefix)
+		e.Fun = qualifyHTMLWalk(e.Fun, prefix, local)
 		for i, arg := range e.Args {
-			e.Args[i] = qualifyHTMLWalk(arg, prefix)
+			e.Args[i] = qualifyHTMLWalk(arg, prefix, local)
 		}
 	case *goast.CompositeLit:
 		for i, elt := range e.Elts {
-			e.Elts[i] = qualifyHTMLWalk(elt, prefix)
+			e.Elts[i] = qualifyHTMLWalk(elt, prefix, local)
 		}
 	case *goast.KeyValueExpr:
-		e.Value = qualifyHTMLWalk(e.Value, prefix)
+		e.Value = qualifyHTMLWalk(e.Value, prefix, local)
 	case *goast.ParenExpr:
-		e.X = qualifyHTMLWalk(e.X, prefix)
+		e.X = qualifyHTMLWalk(e.X, prefix, local)
 	case *goast.UnaryExpr:
-		e.X = qualifyHTMLWalk(e.X, prefix)
+		e.X = qualifyHTMLWalk(e.X, prefix, local)
 	case *goast.BinaryExpr:
-		e.X = qualifyHTMLWalk(e.X, prefix)
-		e.Y = qualifyHTMLWalk(e.Y, prefix)
+		e.X = qualifyHTMLWalk(e.X, prefix, local)
+		e.Y = qualifyHTMLWalk(e.Y, prefix, local)
 	case *goast.IndexExpr:
-		e.X = qualifyHTMLWalk(e.X, prefix)
-		e.Index = qualifyHTMLWalk(e.Index, prefix)
+		e.X = qualifyHTMLWalk(e.X, prefix, local)
+		e.Index = qualifyHTMLWalk(e.Index, prefix, local)
 	case *goast.SliceExpr:
-		e.X = qualifyHTMLWalk(e.X, prefix)
+		e.X = qualifyHTMLWalk(e.X, prefix, local)
 	case *goast.FuncLit:
-		qualifyHTMLWalkStmts(e.Body.List, prefix)
+		qualifyHTMLWalkStmts(e.Body.List, prefix, local)
 	}
 	return expr
 }
 
-func qualifyHTMLWalkStmts(stmts []goast.Stmt, prefix string) {
+func qualifyHTMLWalkStmts(stmts []goast.Stmt, prefix string, local map[string]bool) {
 	for _, s := range stmts {
 		switch st := s.(type) {
 		case *goast.ReturnStmt:
 			for i, r := range st.Results {
-				st.Results[i] = qualifyHTMLWalk(r, prefix)
+				st.Results[i] = qualifyHTMLWalk(r, prefix, local)
 			}
 		case *goast.ExprStmt:
-			st.X = qualifyHTMLWalk(st.X, prefix)
+			st.X = qualifyHTMLWalk(st.X, prefix, local)
 		case *goast.AssignStmt:
 			for i, r := range st.Rhs {
-				st.Rhs[i] = qualifyHTMLWalk(r, prefix)
+				st.Rhs[i] = qualifyHTMLWalk(r, prefix, local)
 			}
 		case *goast.BlockStmt:
-			qualifyHTMLWalkStmts(st.List, prefix)
+			qualifyHTMLWalkStmts(st.List, prefix, local)
 		case *goast.IfStmt:
 			if st.Body != nil {
-				qualifyHTMLWalkStmts(st.Body.List, prefix)
+				qualifyHTMLWalkStmts(st.Body.List, prefix, local)
 			}
 			if st.Else != nil {
 				if b, ok := st.Else.(*goast.BlockStmt); ok {
-					qualifyHTMLWalkStmts(b.List, prefix)
+					qualifyHTMLWalkStmts(b.List, prefix, local)
 				}
 			}
 		}

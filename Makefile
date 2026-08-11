@@ -24,6 +24,14 @@ vet:
 .PHONY: ci
 ci: check vet test
 
+.PHONY: docs
+docs: ## Build the documentation site into docs/dist
+	go run ./docs -out ./docs/dist
+
+.PHONY: docs-serve
+docs-serve: ## Serve the documentation site, re-rendering on every request
+	go run ./docs -serve localhost:8123
+
 .PHONY: playground
 playground:
 	go run ./cmd/playground
