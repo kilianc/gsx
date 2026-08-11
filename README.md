@@ -113,9 +113,68 @@ Use this in CI so a `.gsx` edit can never land without its regenerated `.gsx.go`
 `*.gsx` files are **Go code** with one extra expression form:
 
 - **Tag expressions**: `<tag ...attrs...> ...children... </tag>` and self-closing `<input ... />`
+- **Fragments**: `<>...</>` groups siblings without emitting a wrapper element
 - **Go expression splices**: `{expr}` inside children or attribute positions
   - Child `{expr}` must be a `string`, a `Node`, or a `[]Node` (slices are auto-wrapped as `Group(slice)`).
   - Attribute expressions must typecheck as expected by gomponents helpers (e.g. `class={s}` becomes `Class(s)`).
+- **Comments**: `{/* ... */}` is dropped at compile time, in both child and attribute position
+
+### Fragments
+
+Two sibling tags can't sit adjacent in one Go expression — but a fragment can wrap them:
+
+```go
+func Header() Node {
+  return (
+    <>
+      <h1>Title</h1>
+      <p>Subtitle</p>
+    </>
+  )
+}
+```
+
+This compiles to `Group{html.H1(...), html.P(...)}`, which renders both children with no
+enclosing element.
+
+### Text, whitespace and entities
+
+Literal text follows **JSX's rules**, so markup renders the way it reads:
+
+```go
+<p>
+  This sentence is written
+  across three source lines
+  but renders as one.
+</p>
+```
+
+```html
+<p>This sentence is written across three source lines but renders as one.</p>
+```
+
+Concretely: a run of text containing a line break has each line trimmed, blank lines
+dropped, and the rest joined with a single space. A run **without** a line break is kept
+byte for byte, so inline spacing survives:
+
+```go
+<p><b>bold</b> then <i>italic</i></p>   // the spaces around "then" are preserved
+```
+
+**HTML entities are decoded at compile time**, then escaped again on render — so what you
+write is what the reader sees:
+
+```go
+<p>Tom &amp; Jerry &lt;3 caf&eacute;</p>
+```
+
+```html
+<p>Tom &amp; Jerry &lt;3 café</p>
+```
+
+Only well-formed references (`&name;`, `&#65;`, `&#x41;`) are decoded. Unlike a browser,
+GSX will not decode a reference missing its semicolon, so `?page=1&next=2` and `AT&T`
+survive untouched.
 
 ### Components
 
@@ -133,7 +192,8 @@ func Page() Node {
 
 This generates `Card(Class("primary"), P(Text("Hello")))` — attributes and children are passed as `...Node` arguments, the same way gomponents HTML helpers work.
 
-**Dotted tags** call qualified functions from imported packages:
+**Dotted tags** call qualified functions from imported packages, including nested ones
+(`<ui.widgets.Card>`):
 
 ```go
 import "myapp/ui"
@@ -201,7 +261,8 @@ func SectionWithHeading(heading string, children ...Node) Node {
 ### Notes
 
 - Components are normal Go `func`s and must have an explicit `return ...`.
-- You can’t place two sibling tag expressions adjacent in one Go expression; wrap them in a parent tag (e.g. `return <div>{a}{b}</div>`).
+- You can’t place two sibling tag expressions adjacent in one Go expression; wrap them in a
+  parent tag (`return <div>{a}{b}</div>`) or a fragment (`return <>{a}{b}</>`).
 
 ## Public API
 

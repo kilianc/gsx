@@ -271,3 +271,109 @@ func TestLineCol(t *testing.T) {
 		}
 	}
 }
+
+func TestParseFragment(t *testing.T) {
+	src := []byte("package p\nfunc F() Node { return <><h1>a</h1><p>b</p></> }\n")
+
+	out, tags, err := RewriteTags("f.gsx", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "package p\nfunc F() Node { return __gsx_expr_1() }\n"; string(out) != want {
+		t.Errorf("rewritten = %q, want %q", out, want)
+	}
+	frag, ok := tags[0].Node.(ast.Fragment)
+	if !ok {
+		t.Fatalf("got %T, want ast.Fragment", tags[0].Node)
+	}
+	if len(frag.Children) != 2 {
+		t.Fatalf("got %d children, want 2", len(frag.Children))
+	}
+	assertSpanStartsWith(t, src, frag.Off(), "<>")
+}
+
+func TestParseEmptyFragment(t *testing.T) {
+	_, tags, err := RewriteTags("f.gsx", []byte("package p\nfunc F() Node { return <></> }\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	frag, ok := tags[0].Node.(ast.Fragment)
+	if !ok {
+		t.Fatalf("got %T, want ast.Fragment", tags[0].Node)
+	}
+	if len(frag.Children) != 0 {
+		t.Errorf("got %d children, want 0", len(frag.Children))
+	}
+}
+
+func TestNestedFragment(t *testing.T) {
+	_, tags, err := RewriteTags("f.gsx", []byte("package p\nfunc F() Node { return <div><><p>a</p></></div> }\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	el := tags[0].Node.(ast.Element)
+	if _, ok := el.Children[0].(ast.Fragment); !ok {
+		t.Fatalf("child 0 is %T, want ast.Fragment", el.Children[0])
+	}
+}
+
+func TestFragmentCloseMismatch(t *testing.T) {
+	_, _, err := RewriteTags("f.gsx", []byte("package p\nfunc F() Node { return <><p>a</p></div> }\n"))
+	if err == nil {
+		t.Fatal("want error")
+	}
+	if want := "mismatched closing tag </div>, expected </>"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q, want it to contain %q", err.Error(), want)
+	}
+}
+
+// `<` must still only start a tag when followed by a name or `>`, so ordinary
+// Go comparisons and channel receives are untouched.
+func TestFragmentDetectionDoesNotBreakGo(t *testing.T) {
+	for _, src := range []string{
+		"package p; var x = a < b",
+		"package p; var x = a <- b",
+		"package p; var x = a << b",
+		"package p; func f() { v := <-ch; _ = v }",
+	} {
+		out, tags, err := RewriteTags("f.gsx", []byte(src))
+		if err != nil {
+			t.Errorf("%s: %v", src, err)
+			continue
+		}
+		if len(tags) != 0 || string(out) != src {
+			t.Errorf("%s: rewritten to %q with %d tags", src, out, len(tags))
+		}
+	}
+}
+
+func TestJSXCommentsAreDropped(t *testing.T) {
+	_, tags, err := RewriteTags("f.gsx", []byte(
+		"package p\nfunc F() Node { return <div {/* attr note */} class=\"c\">{/* child note */}<p>a</p></div> }\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	el := tags[0].Node.(ast.Element)
+	if len(el.Attrs) != 1 || el.Attrs[0].Key != "class" {
+		t.Errorf("attrs = %+v, want only class", el.Attrs)
+	}
+	if len(el.Children) != 1 {
+		t.Fatalf("got %d children, want 1", len(el.Children))
+	}
+	if _, ok := el.Children[0].(ast.Element); !ok {
+		t.Errorf("child 0 is %T, want ast.Element", el.Children[0])
+	}
+}
+
+func TestTextIsNormalizedAndDecoded(t *testing.T) {
+	_, tags, err := RewriteTags("f.gsx", []byte(
+		"package p\nfunc F() Node { return <p>\n\tTom &amp; Jerry\n\tsecond line\n</p> }\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	el := tags[0].Node.(ast.Element)
+	got := el.Children[0].(ast.Text).Value
+	if want := "Tom & Jerry second line"; got != want {
+		t.Errorf("text = %q, want %q", got, want)
+	}
+}

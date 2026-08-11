@@ -47,7 +47,7 @@ func RewriteTags(path string, src []byte) ([]byte, []Tag, error) {
 		if p.skipNonCode(&out) {
 			continue
 		}
-		if p.s.peek() == '<' && isTagStart(p.s.peekN(1)) {
+		if p.atTagStart() {
 			srcStart := p.s.i
 			node, err := p.parseTag()
 			if err != nil {
@@ -98,10 +98,33 @@ func (p *parser) skipNonCode(out *strings.Builder) bool {
 	return true
 }
 
-// parseTag parses a single element starting at '<'.
+// atTagStart reports whether the cursor sits on the `<` of a tag expression.
+//
+// A tag is `<name` or the fragment opener `<>`. Neither `<>` nor `<` followed
+// by a letter can begin a valid Go expression at a point where a tag is
+// allowed, so this never misfires on comparison or receive operators.
+func (p *parser) atTagStart() bool {
+	if p.s.peek() != '<' {
+		return false
+	}
+	b := p.s.peekN(1)
+	return isTagStart(b) || b == '>'
+}
+
+// parseTag parses a single element or fragment starting at '<'.
 func (p *parser) parseTag() (ast.Node, error) {
 	start := p.s.i
 	p.s.next() // '<'
+
+	// Fragment: `<>...</>`, which groups siblings without emitting an element.
+	if p.s.peek() == '>' {
+		p.s.next()
+		children, err := p.parseChildren("", start)
+		if err != nil {
+			return nil, err
+		}
+		return ast.Fragment{Children: children, Pos: start}, nil
+	}
 
 	nameStart := p.s.i
 	for isTagNameByte(p.s.peek()) {
@@ -151,6 +174,9 @@ func (p *parser) parseAttrs(tag string, tagPos int) (attrs []ast.Attr, selfClosi
 			src, nested, err := p.readBracedExpr()
 			if err != nil {
 				return nil, false, err
+			}
+			if isCommentOnly(src) {
+				continue
 			}
 			attrs = append(attrs, ast.Attr{
 				Kind:   ast.AttrExpr,
@@ -223,12 +249,13 @@ func (p *parser) parseAttr(tag string) (ast.Attr, error) {
 }
 
 // parseChildren consumes everything up to and including the matching close tag.
+// An empty tag means the caller is parsing a fragment, closed by `</>`.
 func (p *parser) parseChildren(tag string, tagPos int) ([]ast.Node, error) {
 	var kids []ast.Node
 
 	for {
 		if p.s.eof() {
-			return nil, p.errorf(tagPos, "unclosed <%s>: reached end of file without a matching </%s>", tag, tag)
+			return nil, p.errorf(tagPos, "unclosed %s: reached end of file without a matching %s", openName(tag), closeName(tag))
 		}
 
 		if p.s.startsWith("</") {
@@ -242,16 +269,16 @@ func (p *parser) parseChildren(tag string, tagPos int) ([]ast.Node, error) {
 			closeTag := string(p.s.src[nameStart:p.s.i])
 			p.s.skipSpace()
 			if p.s.peek() != '>' {
-				return nil, p.errorf(p.s.i, "expected `>` to close </%s>", closeTag)
+				return nil, p.errorf(p.s.i, "expected `>` to close %s", closeName(closeTag))
 			}
 			p.s.next()
 			if closeTag != tag {
-				return nil, p.errorf(closePos, "mismatched closing tag </%s>, expected </%s>", closeTag, tag)
+				return nil, p.errorf(closePos, "mismatched closing tag %s, expected %s", closeName(closeTag), closeName(tag))
 			}
 			return kids, nil
 		}
 
-		if p.s.peek() == '<' && isTagStart(p.s.peekN(1)) {
+		if p.atTagStart() {
 			n, err := p.parseTag()
 			if err != nil {
 				return nil, err
@@ -266,6 +293,10 @@ func (p *parser) parseChildren(tag string, tagPos int) ([]ast.Node, error) {
 			if err != nil {
 				return nil, err
 			}
+			// `{/* note */}` is a JSX comment, not an expression: drop it.
+			if isCommentOnly(src) {
+				continue
+			}
 			kids = append(kids, ast.Expr{Src: strings.TrimSpace(src), Nested: nested, Pos: pos})
 			continue
 		}
@@ -274,10 +305,26 @@ func (p *parser) parseChildren(tag string, tagPos int) ([]ast.Node, error) {
 		for !p.s.eof() && p.s.peek() != '<' && p.s.peek() != '{' {
 			p.s.next()
 		}
-		if v := string(p.s.src[pos:p.s.i]); strings.TrimSpace(v) != "" {
-			kids = append(kids, ast.Text{Value: v, Pos: pos})
+		if v := normalizeText(string(p.s.src[pos:p.s.i])); v != "" {
+			kids = append(kids, ast.Text{Value: decodeEntities(v), Pos: pos})
 		}
 	}
+}
+
+// openName and closeName render a tag name for a diagnostic, spelling the
+// fragment forms as `<>` and `</>` rather than as an empty name.
+func openName(tag string) string {
+	if tag == "" {
+		return "<>"
+	}
+	return "<" + tag + ">"
+}
+
+func closeName(tag string) string {
+	if tag == "" {
+		return "</>"
+	}
+	return "</" + tag + ">"
 }
 
 // readBracedExpr consumes a `{...}` splice and returns its Go source.
@@ -298,7 +345,7 @@ func (p *parser) readBracedExpr() (string, map[string]ast.Node, error) {
 		if p.skipNonCode(&out) {
 			continue
 		}
-		if p.s.peek() == '<' && isTagStart(p.s.peekN(1)) {
+		if p.atTagStart() {
 			node, err := p.parseTag()
 			if err != nil {
 				return "", nil, err

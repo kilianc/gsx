@@ -1,0 +1,1 @@
+<div><h1>Fragments group siblings</h1><p>without emitting a wrapper</p><p>This sentence is written across three source lines but renders as one.</p><ul><li>one</li><li>two</li></ul><p><b>bold</b> then <i>italic</i></p><p>Tom &amp; Jerry &lt;3 AB café</p><span>world</span></div>

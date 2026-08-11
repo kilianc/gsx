@@ -72,3 +72,12 @@ type Element struct {
 
 func (Element) node()      {}
 func (e Element) Off() int { return e.Pos }
+
+// Fragment is `<>...</>`: a list of siblings with no wrapping element.
+type Fragment struct {
+	Children []Node
+	Pos      int
+}
+
+func (Fragment) node()      {}
+func (f Fragment) Off() int { return f.Pos }
