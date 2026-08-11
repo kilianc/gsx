@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -9,11 +11,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"context"
 
 	"github.com/kilianc/gsx/internal/gsx/compile"
 	"github.com/kilianc/gsx/internal/gsx/lsp"
-	"github.com/kilianc/gsx/internal/gsx/module"
 	"github.com/kilianc/gsx/internal/gsx/outfile"
 )
 
@@ -38,22 +38,11 @@ func main() {
 		_, _ = fmt.Fprintln(os.Stderr, "  - ./file.gsx   only that file")
 		flag.PrintDefaults()
 	}
-	rootFlag := flag.String("root", "", "module root (defaults to auto-detected go.mod parent from cwd)")
 	dirFlag := flag.String("dir", "", "if set, only generate for this directory (non-recursive). Useful with go:generate.")
+	checkFlag := flag.Bool("check", false, "do not write; exit non-zero if any generated file is out of date")
 	flag.Parse()
 
 	cwd, err := os.Getwd()
-	if err != nil {
-		fatal(err)
-	}
-	root := *rootFlag
-	if root == "" {
-		root, err = module.FindModuleRoot(cwd)
-		if err != nil {
-			fatal(err)
-		}
-	}
-	root, err = filepath.Abs(root)
 	if err != nil {
 		fatal(err)
 	}
@@ -71,7 +60,11 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
-		if err := generateDir(root, dir); err != nil {
+		paths, err := dirGSXPaths(dir)
+		if err != nil {
+			fatal(err)
+		}
+		if err := run(paths, *checkFlag); err != nil {
 			fatal(err)
 		}
 		return
@@ -86,21 +79,48 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	if len(paths) == 0 {
-		return
+	if err := run(paths, *checkFlag); err != nil {
+		fatal(err)
 	}
+}
 
+// run compiles every path. In check mode it writes nothing and instead reports
+// the files whose generated output differs from what is on disk, so CI can
+// verify checked-in `*.gsx.go` files are current.
+func run(paths []string, check bool) error {
 	sort.Strings(paths)
+
 	var allErr error
+	var stale []string
 	for _, pth := range paths {
+		src, err := compileFile(pth)
+		if err != nil {
+			allErr = errors.Join(allErr, err)
+			continue
+		}
+		outPath := pth + ".go"
+
+		if check {
+			existing, err := os.ReadFile(outPath)
+			if err != nil || !bytes.Equal(existing, src) {
+				stale = append(stale, outPath)
+			}
+			continue
+		}
+
 		fmt.Fprintf(os.Stderr, "gsx: %s\n", pth)
-		if err := generateFile(root, pth); err != nil {
+		if err := outfile.WriteGeneratedFile(outPath, src); err != nil {
 			allErr = errors.Join(allErr, err)
 		}
 	}
-	if allErr != nil {
-		fatal(allErr)
+
+	if len(stale) > 0 {
+		for _, p := range stale {
+			fmt.Fprintf(os.Stderr, "gsx: out of date: %s\n", p)
+		}
+		allErr = errors.Join(allErr, fmt.Errorf("%d generated file(s) out of date; run `gsx ./...`", len(stale)))
 	}
+	return allErr
 }
 
 func lspMain(args []string) error {
@@ -131,35 +151,10 @@ func fatal(err error) {
 }
 
 
-func discoverGSX(root string) (map[string][]string, error) {
-	out := map[string][]string{}
-	err := filepath.WalkDir(root, func(path string, de fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if de.IsDir() {
-			name := de.Name()
-			if name == "vendor" || name == "node_modules" || name == "cursor-extension" || strings.HasPrefix(name, ".") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if strings.HasSuffix(de.Name(), ".gsx") {
-			abs, err := filepath.Abs(path)
-			if err != nil {
-				return err
-			}
-			out[filepath.Dir(abs)] = append(out[filepath.Dir(abs)], abs)
-		}
-		return nil
-	})
-	return out, err
-}
-
-func generateDir(moduleRoot, dir string) error {
+func dirGSXPaths(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var paths []string
 	for _, e := range entries {
@@ -170,34 +165,19 @@ func generateDir(moduleRoot, dir string) error {
 			paths = append(paths, filepath.Join(dir, e.Name()))
 		}
 	}
-	if len(paths) == 0 {
-		return nil
-	}
-	sort.Strings(paths)
-
-	for _, pth := range paths {
-		fmt.Fprintf(os.Stderr, "gsx: %s\n", pth)
-		if err := generateFile(moduleRoot, pth); err != nil {
-			return err
-		}
-	}
-	return nil
+	return paths, nil
 }
 
-func generateFile(moduleRoot, pth string) error {
+func compileFile(pth string) ([]byte, error) {
 	b, err := os.ReadFile(pth)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	src, err := compile.CompileFile(pth, b)
 	if err != nil {
-		return fmt.Errorf("%s: %w", pth, err)
+		return nil, fmt.Errorf("%s: %w", pth, err)
 	}
-	outPath := pth + ".go"
-	if err := outfile.WriteGeneratedFile(outPath, src); err != nil {
-		return err
-	}
-	return nil
+	return src, nil
 }
 
 func collectGSXPaths(cwd string, patterns []string) ([]string, error) {

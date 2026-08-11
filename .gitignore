@@ -1,33 +1,13 @@
-*
+# Build output
+/bin/
+/dist/
+*.vsix
 
-!*/
-
-!*.gsx
-!*.md
-!*.svg
-!go.*
-!.gitignore
-!Makefile
-!LICENSE
-
-!cmd/**/*.go
-!e2e/**/*.gsx.go
-!internal/**/*.go
-!pkg/**/*.go
-
-# VS Code extension
-!vscode/gsx-vscode/package.json
-!vscode/gsx-vscode/package-lock.json
-!vscode/gsx-vscode/tsconfig.json
-!vscode/gsx-vscode/webpack.config.js
-!vscode/gsx-vscode/language-configuration.json
-!vscode/gsx-vscode/.vscodeignore
-!vscode/gsx-vscode/src/**/*.ts
-!vscode/gsx-vscode/syntaxes/**/*.json
-
-# Always exclude generated/dependency artifacts
+# Editor extension build artifacts
 vscode/gsx-vscode/node_modules/
 vscode/gsx-vscode/dist/
-vscode/gsx-vscode/*.vsix
+
+# Local scratch
 .tmp/
 issues/
+.DS_Store

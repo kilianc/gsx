@@ -16,16 +16,16 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build (non-e2e packages)
-        run: go build ./cmd/... ./internal/...
+      - name: Build
+        run: go build ./...
 
-      - name: Clean generated files
-        run: |
-          rm -rf ./**/*.gsx.go
-          rm -rf ./**/*.html
+      - name: Vet
+        run: go vet ./...
 
-      - name: Test (generate + compare)
-        run: go test ./...
+      # The checked-in *.gsx.go files are the golden output of the compiler and
+      # are compiled into the e2e test binary, so they must be current.
+      - name: Check generated files are up to date
+        run: go run ./cmd/gsx -check ./...
 
-      - name: Test again (verify HTML output)
+      - name: Test
         run: go test ./...
