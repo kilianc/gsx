@@ -5,7 +5,7 @@ func OrganizingPage() Page {
 		Slug:     "organizing",
 		Title:    "Organizing your codebase",
 		Subtitle: "Where components live, how packages divide up, and what changes once markup is Go.",
-		Body: (
+		Body:     (
 			<>
 				{Section("files", "Files and generated output",
 					P(Text("Each "), Code("foo.gsx"), Text(" produces a "), Code("foo.gsx.go"), Text(" beside it. "),

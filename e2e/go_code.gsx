@@ -22,21 +22,21 @@ func GoCode() Node {
 
 	topClass := "top"
 	top := (
-    <div class={topClass}>
-      <p>hello</p>
-      <p>{hello}</p>
-      <ul>{lis}</ul>
-    </div>
-  )
+		<div class={topClass}>
+		  <p>hello</p>
+		  <p>{hello}</p>
+		  <ul>{lis}</ul>
+		</div>
+	)
 
 	bottomClass := "bottom"
 	bottom := (
-    <div class={bottomClass}>
-      <p class={nextClass()}>hello</p>
-      <p class={nextClass()}>{hello}</p>
-      <ul class={nextClass()}>{lis}</ul>
-    </div>
-  )
+		<div class={bottomClass}>
+		  <p class={nextClass()}>hello</p>
+		  <p class={nextClass()}>{hello}</p>
+		  <ul class={nextClass()}>{lis}</ul>
+		</div>
+	)
 
 	return <div>{top}{bottom}</div>
 }

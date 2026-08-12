@@ -122,7 +122,8 @@
       },
       "[gsx]": {
         "editor.linkedEditing": true,
-        "editor.suggest.showWords": false
+        "editor.suggest.showWords": false,
+        "editor.defaultFormatter": "kilianc.gsx-vscode"
       }
     },
     "snippets": [

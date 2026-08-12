@@ -108,6 +108,8 @@ go install github.com/kilianc/gsx/cmd/gsx@latest
 ```bash
 gsx ./...          # generate a .gsx.go next to every .gsx
 gsx -check ./...   # CI: fail if any generated file is stale
+gsx fmt -w ./...   # format sources
+gsx fmt -l ./...   # CI: fail if any source is unformatted
 gsx dev            # watch, rebuild, restart, reload the browser
 gsx lsp            # language server (started by the editor extension)
 ```
@@ -162,6 +164,7 @@ behaviour a JSX-like language needs:
 - **Syntax highlighting** that knows the Go/markup boundary: components colour differently
   from elements, prose is not highlighted as Go, and `a < b` is never mistaken for a tag
 - **Snippets** — `comp`, `layout`, `frag`, `each`, `if`
+- **Format on save** — Go formatted as gofmt would, markup re-indented but not reflowed
 - **Commands** — generate, dev server, and open the generated `.gsx.go` side by side
 
 See the [editor setup guide](https://kilianc.github.io/gsx/editors.html).

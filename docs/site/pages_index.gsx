@@ -5,7 +5,7 @@ func IndexPage() Page {
 		Slug:     "index",
 		Title:    "GSX",
 		Subtitle: "Write HTML inline in ordinary Go functions. No template language, no runtime — just Go you can read.",
-		Body: (
+		Body:     (
 			<>
 				<div class="hero-cta">
 					<a class="btn btn-primary" href="./language.html">Read the language guide</a>

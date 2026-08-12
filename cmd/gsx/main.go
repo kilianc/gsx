@@ -17,6 +17,7 @@ import (
 
 	"github.com/kilianc/gsx/internal/gsx/compile"
 	"github.com/kilianc/gsx/internal/gsx/dev"
+	gsxformat "github.com/kilianc/gsx/internal/gsx/format"
 	"github.com/kilianc/gsx/internal/gsx/lsp"
 	"github.com/kilianc/gsx/internal/gsx/outfile"
 	"github.com/kilianc/gsx/internal/gsx/parse"
@@ -37,11 +38,17 @@ func main() {
 				fatal(err)
 			}
 			return
+		case "fmt":
+			if err := fmtMain(os.Args[2:]); err != nil {
+				fatal(err)
+			}
+			return
 		}
 	}
 
 	flag.Usage = func() {
 		_, _ = fmt.Fprintln(os.Stderr, "Usage: gsx [flags] [paths...]")
+		_, _ = fmt.Fprintln(os.Stderr, "       gsx fmt [flags] [paths...]")
 		_, _ = fmt.Fprintln(os.Stderr, "       gsx dev [flags]")
 		_, _ = fmt.Fprintln(os.Stderr, "       gsx lsp [flags]")
 		_, _ = fmt.Fprintln(os.Stderr, "")
@@ -227,6 +234,107 @@ func generateAll(paths []string) error {
 		}
 	}
 	return allErr
+}
+
+func fmtMain(args []string) error {
+	fs := flag.NewFlagSet("fmt", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		_, _ = fmt.Fprintln(os.Stderr, "Usage: gsx fmt [flags] [paths...]")
+		_, _ = fmt.Fprintln(os.Stderr, "")
+		_, _ = fmt.Fprintln(os.Stderr, "Formats *.gsx sources. Go code is formatted as gofmt would;")
+		_, _ = fmt.Fprintln(os.Stderr, "tag expressions keep their shape and are re-indented to fit.")
+		_, _ = fmt.Fprintln(os.Stderr, "")
+		fs.PrintDefaults()
+	}
+	write := fs.Bool("w", false, "write the result back to the file instead of stdout")
+	list := fs.Bool("l", false, "list files whose formatting differs, and write nothing")
+	diff := fs.Bool("d", false, "print a unified diff instead of the formatted source")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	patterns := fs.Args()
+	if len(patterns) == 0 {
+		patterns = []string{"./..."}
+	}
+	paths, err := collectGSXPaths(cwd, patterns)
+	if err != nil {
+		return err
+	}
+	sort.Strings(paths)
+
+	var allErr error
+	var unformatted []string
+	for _, pth := range paths {
+		src, err := os.ReadFile(pth)
+		if err != nil {
+			allErr = errors.Join(allErr, err)
+			continue
+		}
+		out, err := gsxformat.Source(pth, src)
+		if err != nil {
+			allErr = errors.Join(allErr, err)
+			continue
+		}
+		if bytes.Equal(out, src) {
+			continue
+		}
+		unformatted = append(unformatted, pth)
+
+		switch {
+		case *list:
+			fmt.Println(pth)
+		case *diff:
+			fmt.Print(unifiedDiff(pth, string(src), string(out)))
+		case *write:
+			if err := os.WriteFile(pth, out, 0o644); err != nil {
+				allErr = errors.Join(allErr, err)
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "gsx fmt: %s\n", pth)
+		default:
+			os.Stdout.Write(out)
+		}
+	}
+
+	// `-l` and `-d` are check modes, so an unformatted file is a failure.
+	if len(unformatted) > 0 && (*list || *diff) {
+		allErr = errors.Join(allErr, fmt.Errorf("%d file(s) not formatted", len(unformatted)))
+	}
+	return allErr
+}
+
+// unifiedDiff renders a minimal line diff. It exists so `gsx fmt -d` is
+// readable in review output without depending on an external diff tool.
+func unifiedDiff(path, want, got string) string {
+	a, b := strings.Split(want, "\n"), strings.Split(got, "\n")
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "--- %s\n+++ %s (formatted)\n", path, path)
+	for i := 0; i < len(a) || i < len(b); i++ {
+		var al, bl string
+		if i < len(a) {
+			al = a[i]
+		}
+		if i < len(b) {
+			bl = b[i]
+		}
+		if al == bl {
+			continue
+		}
+		if i < len(a) {
+			fmt.Fprintf(&sb, "-%s\n", al)
+		}
+		if i < len(b) {
+			fmt.Fprintf(&sb, "+%s\n", bl)
+		}
+	}
+	return sb.String()
 }
 
 func fatal(err error) {

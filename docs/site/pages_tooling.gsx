@@ -5,7 +5,7 @@ func LiveReloadPage() Page {
 		Slug:     "live-reload",
 		Title:    "Live reload",
 		Subtitle: "Save a file, see the change. gsx dev regenerates, restarts your server and reloads the browser.",
-		Body: (
+		Body:     (
 			<>
 				{Section("start", "Start it",
 					Shell("gsx dev"),
@@ -70,7 +70,7 @@ func EditorsPage() Page {
 		Slug:     "editors",
 		Title:    "Editors",
 		Subtitle: "A gopls-backed language server gives .gsx files the Go tooling you already use.",
-		Body: (
+		Body:     (
 			<>
 				{Section("how", "How it works",
 					P(Text("GSX ships a language server that sits between your editor and "), Code("gopls"),
@@ -95,6 +95,12 @@ func EditorsPage() Page {
 					</ul>,
 					P(Text("Syntax highlighting understands the boundary between Go and markup: components are coloured differently from HTML elements, prose between tags is not highlighted as Go, and a comparison like "),
 						Code("a < b"), Text(" is never mistaken for a tag.")),
+					<h3>Formatting</h3>,
+					P(Text("The language server formats "), Code(".gsx"), Text(" buffers, so format-on-save works. The same formatter runs on the command line:")),
+					Shell("gsx fmt -w ./..."),
+					P(Text("Go code is formatted exactly as gofmt would format it. Markup keeps the shape you gave it and is only re-indented to match its surroundings — the formatter deliberately does not reflow attributes or move children onto their own lines.")),
+					P(Text("Use "), Code("gsx fmt -l ./..."), Text(" in CI to fail on unformatted sources, and "),
+						Code("gsx fmt -d"), Text(" to see the diff.")),
 					<h3>Commands</h3>,
 					<table>
 						<thead><tr><th>Command</th><th>Does</th></tr></thead>
