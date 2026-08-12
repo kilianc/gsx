@@ -98,6 +98,43 @@ extension-test: tools-image ## Run the extension unit tests
 extension-check: tools-image ## Typecheck the extension
 	$(DOCKER_CHECK) npx tsc --noEmit -p tsconfig.json
 
+# The README demo animation. Recording it is a human with a screen recorder —
+# a container cannot do that part — but the conversion is pinned here so the
+# result does not depend on whose ffmpeg ran it, and so nobody needs ffmpeg on
+# their machine to refresh the demo after a visual change.
+#
+# The output is twice its display size on purpose. The README shows the GIF at
+# 920px, and a 920px-wide file is upscaled on every HiDPI screen, which is most
+# of them — that, more than the encoder, is what makes a demo look soft.
+DEMO_IMAGE := gsx-demo
+OUT ?= assets/gsx-demo.gif
+WIDTH ?= 1840
+FPS ?= 20
+# gifski is passed --width even though ffmpeg has already scaled the frames:
+# without it gifski quietly shrinks anything over "about 800x600", which is
+# exactly the downscale this target exists to avoid.
+#
+# Frames land in the container's /tmp rather than the bind mount: there are
+# hundreds of them, they are read once, and the host has no use for them.
+DOCKER_DEMO := docker run --rm -u "$$(id -u):$$(id -g)" \
+	-v "$(CURDIR):/work" -w /work $(DEMO_IMAGE)
+
+.PHONY: demo-image
+demo-image: ## Build the pinned ffmpeg + gifski image
+	docker build -q -f tools/demo.Dockerfile -t $(DEMO_IMAGE) .
+
+.PHONY: demo
+demo: demo-image ## Convert a screen recording into the README demo: make demo IN=recording.mov
+	@test -n "$(IN)" || { \
+		echo "usage: make demo IN=recording.mov [OUT=$(OUT)] [WIDTH=$(WIDTH)] [FPS=$(FPS)]"; \
+		exit 1; }
+	$(DOCKER_DEMO) sh -c 'set -e; \
+		rm -rf /tmp/frames; mkdir -p /tmp/frames; \
+		ffmpeg -v error -y -i "$(IN)" \
+			-vf "fps=$(FPS),scale=$(WIDTH):-2:flags=lanczos" /tmp/frames/%05d.png; \
+		gifski --fps $(FPS) --quality 100 --width $(WIDTH) -o "$(OUT)" /tmp/frames/*.png'
+	@ls -lh "$(OUT)"
+
 # Packaging needs webpack and vsce, which are not in the image: they pull in
 # native modules that make the image build slow and unreliable, and nothing else
 # needs them. They are installed here instead.
