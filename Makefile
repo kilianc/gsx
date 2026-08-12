@@ -3,8 +3,9 @@ gen: ## Regenerate every *.gsx.go from its *.gsx source
 	go run ./cmd/gsx ./...
 
 .PHONY: fmt
-fmt: ## Format every *.gsx source
+fmt: ## Format every *.gsx and Go source
 	go run ./cmd/gsx fmt -w ./...
+	gofmt -w .
 
 .PHONY: check
 check: ## Fail if any checked-in generated file is out of date, or any source is unformatted
@@ -23,15 +24,6 @@ test: ## Run the full test suite
 golden: gen ## Regenerate every golden file, then run the tests
 	go test ./e2e -update
 	go test ./...
-
-.PHONY: fmt
-fmt: ## Format every package
-	gofmt -w .
-
-.PHONY: fmt-check
-fmt-check: ## Fail if anything is unformatted
-	@out=$$(gofmt -l .); \
-	if [ -n "$$out" ]; then echo "not gofmt'd:"; echo "$$out"; exit 1; fi
 
 .PHONY: vet
 vet:
