@@ -3,6 +3,10 @@ package site
 // stylesheet is inlined into every page. The site is a handful of static files
 // with no build step and no external requests, so a single inline stylesheet is
 // both the simplest and the fastest option.
+//
+// The palette is light in every environment. The site is mostly code samples
+// whose highlighting has to match the prose around it and the playground editor
+// beside it, and one palette is one thing to keep in tune.
 const stylesheet = `
 :root {
   --bg: #fbfbfa;
@@ -30,33 +34,10 @@ const stylesheet = `
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #101012;
-    --bg-raised: #161619;
-    --bg-code: #1a1a1f;
-    --fg: #ececf0;
-    --fg-muted: #a0a0ac;
-    --fg-faint: #75757f;
-    --border: #26262c;
-    --accent: #a78bfa;
-    --accent-soft: #241f3a;
-
-    --hl-comment: #6f6f7b;
-    --hl-string: #6ee7a8;
-    --hl-number: #f0b866;
-    --hl-keyword: #e08ce8;
-    --hl-type: #6cc2ff;
-    --hl-tag: #ff8f80;
-    --hl-attr: #f0b866;
-    --hl-brace: #a78bfa;
-    --hl-punct: #75757f;
-  }
-}
-
 * { box-sizing: border-box; }
 
-html { -webkit-text-size-adjust: 100%; }
+/* Form controls and scrollbars follow this, so they stay light under a dark OS. */
+html { -webkit-text-size-adjust: 100%; color-scheme: light; }
 
 body {
   margin: 0;
