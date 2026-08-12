@@ -99,9 +99,31 @@ Rendering is [`maragu.dev/gomponents`](https://pkg.go.dev/maragu.dev/gomponents)
 
 ## Install
 
+**The CLI** (needs Go 1.22+):
+
 ```bash
 go install github.com/kilianc/gsx/cmd/gsx@latest
 ```
+
+The binary lands in `$(go env GOPATH)/bin`, which must be on your `PATH`. Check it with
+`gsx -h`.
+
+**The editor extension** is not on the Marketplace yet, so build it from the repository.
+This needs [Docker](https://www.docker.com) — the Node toolchain is pinned in a container,
+so nothing is installed on your machine:
+
+```bash
+git clone https://github.com/kilianc/gsx
+cd gsx
+make vsix
+code --install-extension vscode/gsx-vscode/gsx-vscode-*.vsix
+```
+
+For Cursor, use `cursor --install-extension` instead. If you already have Node and would
+rather not use Docker, `cd vscode/gsx-vscode && npm install && npm run compile && npx vsce
+package --no-dependencies` does the same thing.
+
+The extension runs the `gsx` binary, so install the CLI first either way.
 
 ## Use
 

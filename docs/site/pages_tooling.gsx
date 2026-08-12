@@ -123,15 +123,29 @@ func EditorsPage() Page {
 					</table>,
 				)}
 
-				{Section("vscode", "VS Code and Cursor",
-					P(Text("Install the extension from "), Code("vscode/gsx-vscode/"), Text(", and make sure "),
-						Code("gsx"), Text(" is on your "), Code("PATH"), Text(":")),
+				{Section("install", "Installing",
+					<h3>1. The CLI</h3>,
 					Shell("go install github.com/kilianc/gsx/cmd/gsx@latest"),
-					P(Text("The extension starts "), Code("gsx lsp"), Text(" for every "), Code(".gsx"), Text(" file.")),
-					P(Text("Building it needs Node, which GSX itself does not. The toolchain is pinned in "),
-						Code("tools/Dockerfile"), Text(", so no JS toolchain is installed on your machine:")),
-					Shell("make vsix"),
-					Note(P(Text("On macOS, "), Code("gsx"), Text(" collides with Ghostscript's "), Code("gsx"),
+					P(Text("This is what the extension runs, so it has to be installed even if you only want editor support. "),
+						Text("The binary lands in "), Code("$(go env GOPATH)/bin"), Text(", which must be on your "), Code("PATH"), Text(".")),
+					P(Text("Check it:")),
+					Shell("gsx -h"),
+
+					<h3>2. The extension</h3>,
+					P(Text("It is not on the Marketplace yet, so build it from the repository. This needs "),
+						Link("https://www.docker.com", "Docker"), Text(" — the Node toolchain is pinned in a container so nothing is installed on your machine:")),
+					Shell(`git clone https://github.com/kilianc/gsx
+cd gsx
+make vsix
+code --install-extension vscode/gsx-vscode/gsx-vscode-*.vsix`),
+					P(Text("For Cursor, swap the last line for "), Code("cursor --install-extension …"), Text(".")),
+					P(Text("If you already have Node and would rather not use Docker:")),
+					Shell(`cd vscode/gsx-vscode
+npm install && npm run compile && npx vsce package --no-dependencies`),
+					P(Text("Then reload the window and open a "), Code(".gsx"), Text(" file. "),
+						Text("The status bar reports the language server starting; "),
+						Code("GSX: Restart Language Server"), Text(" in the command palette restarts it.")),
+					Note(P(Strong("On macOS, "), Code("gsx"), Text(" collides with Ghostscript's "), Code("gsx"),
 						Text(" if that is installed. The extension prefers a workspace-local "), Code("./bin/gsx"),
 						Text(" and the usual Go install paths before falling back to "), Code("PATH"),
 						Text("; you can also set "), Code("gsx.executablePath"), Text(" explicitly."))),
