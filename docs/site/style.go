@@ -100,9 +100,10 @@ a:hover { text-decoration: underline; }
   border-bottom: 1px solid var(--border);
 }
 
-.brand { color: var(--fg); font-weight: 650; letter-spacing: -0.02em; }
+.brand { display: flex; color: var(--fg); }
 .brand:hover { text-decoration: none; }
-.brand-mark { font-family: var(--mono); color: var(--accent); font-size: 15px; }
+.brand-logo { display: block; overflow: visible; }
+.brand-braces { stroke: var(--accent); }
 
 .topnav { display: flex; gap: 20px; flex-wrap: wrap; font-size: 14.5px; }
 .topnav a { color: var(--fg-muted); }

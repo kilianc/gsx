@@ -66,6 +66,7 @@ func Layout(p Page, pages []Page) Node {
 					<meta name="viewport" content="width=device-width, initial-scale=1" />
 					<title>{p.Title + " — GSX"}</title>
 					<meta name="description" content={p.Subtitle} />
+					<link rel="icon" href="./favicon.svg" type="image/svg+xml" />
 					{El("style", Raw(stylesheet))}
 					{Group(styles)}
 				</head>
@@ -90,11 +91,37 @@ func Layout(p Page, pages []Page) Node {
 	)
 }
 
+// Logo is the wordmark: a curly brace whose pinch is an angle bracket, hugging
+// the name the way `{ }` hugs a spliced value.
+//
+// It is inline rather than an <img> so it takes its ink from the surrounding
+// text colour, which means it follows the light and dark themes for free. The
+// same drawing is in assets/gsx-logo.svg for the README.
+func Logo() Node {
+	brace := "M32 12 L22 12 L22 32 L10 40 L22 48 L22 68 L32 68"
+
+	return (
+		<svg class="brand-logo" viewBox="0 0 238 80" height="22" role="img" aria-label="gsx">
+			<g fill="none" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" class="brand-braces">
+				<path d={brace} />
+				<path d={brace} transform="translate(238,0) scale(-1,1)" />
+			</g>
+			<g fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+				<circle cx="78" cy="40" r="14" />
+				<path d="M92 26 L92 58 C92 68 84 71 75 67" />
+				<path d="M134 32 C134 24 110 24 110 33 C110 41 134 39 134 47 C134 56 110 56 110 48" />
+				<path d="M150 26 L174 54" />
+				<path d="M174 26 L150 54" />
+			</g>
+		</svg>
+	)
+}
+
 func Header() Node {
 	return (
 		<header class="topbar">
-			<a class="brand" href="./index.html">
-				<span class="brand-mark">{"<gsx/>"}</span>
+			<a class="brand" href="./index.html" aria-label="GSX home">
+				{Logo()}
 			</a>
 			<nav class="topnav">
 				<a href="./playground.html">Playground</a>
