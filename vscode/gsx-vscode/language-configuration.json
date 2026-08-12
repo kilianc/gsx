@@ -1,67 +1,84 @@
 {
   "comments": {
     "lineComment": "//",
-    "blockComment": [
-      "/*",
-      "*/"
-    ]
+    "blockComment": ["/*", "*/"]
   },
   "brackets": [
-    [
-      "{",
-      "}"
-    ],
-    [
-      "[",
-      "]"
-    ],
-    [
-      "(",
-      ")"
-    ]
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"],
+    ["<", ">"]
   ],
   "autoClosingPairs": [
-    {
-      "open": "{",
-      "close": "}"
-    },
-    {
-      "open": "[",
-      "close": "]"
-    },
-    {
-      "open": "(",
-      "close": ")"
-    },
-    {
-      "open": "\"",
-      "close": "\""
-    },
-    {
-      "open": "'",
-      "close": "'"
-    }
+    { "open": "{", "close": "}" },
+    { "open": "[", "close": "]" },
+    { "open": "(", "close": ")" },
+    { "open": "\"", "close": "\"", "notIn": ["string"] },
+    { "open": "`", "close": "`", "notIn": ["string"] },
+    { "open": "'", "close": "'", "notIn": ["string", "comment"] },
+    { "open": "/*", "close": " */", "notIn": ["string"] }
   ],
   "surroundingPairs": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"],
+    ["\"", "\""],
+    ["`", "`"],
+    ["'", "'"],
+    ["<", ">"]
+  ],
+  "colorizedBracketPairs": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"]
+  ],
+  "autoCloseBefore": ";:.,=}])><`'\" \n\t",
+  "wordPattern": "(-?\\d*\\.\\d\\w*)|([^\\`\\~\\!\\@\\#\\%\\^\\&\\*\\(\\)\\-\\=\\+\\[\\{\\]\\}\\\\\\|\\;\\:\\'\\\"\\,\\.\\<\\>\\/\\?\\s]+)",
+  "indentationRules": {
+    "increaseIndentPattern": "^((?!\\/\\/).)*(\\{[^}\"'`]*|\\([^)\"'`]*|\\[[^\\]\"'`]*|<(?!\\/)([^>\"'`]|\"[^\"]*\"|'[^']*')*>(?![^<]*<\\/))$",
+    "decreaseIndentPattern": "^\\s*(\\}|\\)|\\]|<\\/[^>]*>)"
+  },
+  "onEnterRules": [
     {
-      "open": "{",
-      "close": "}"
+      "comment": "Pressing enter between a tag pair indents the body and puts the close tag on its own line.",
+      "beforeText": "<(?!\\/)([a-zA-Z][a-zA-Z0-9._-]*)(?:\\s[^<>]*)?>$",
+      "afterText": "^<\\/([a-zA-Z][a-zA-Z0-9._-]*)>",
+      "action": { "indent": "indentOutdent" }
     },
     {
-      "open": "[",
-      "close": "]"
+      "comment": "Enter after an opening tag indents the body.",
+      "beforeText": "<(?!\\/)([a-zA-Z][a-zA-Z0-9._-]*)(?:\\s[^<>]*)?>$",
+      "action": { "indent": "indent" }
     },
     {
-      "open": "(",
-      "close": ")"
+      "comment": "Enter between a fragment pair.",
+      "beforeText": "<>$",
+      "afterText": "^<\\/>",
+      "action": { "indent": "indentOutdent" }
     },
     {
-      "open": "\"",
-      "close": "\""
+      "beforeText": "<>$",
+      "action": { "indent": "indent" }
     },
     {
-      "open": "'",
-      "close": "'"
+      "comment": "Continue a block comment.",
+      "beforeText": "^\\s*/\\*\\*(?!/)([^\\*]|\\*(?!/))*$",
+      "afterText": "^\\s*\\*/$",
+      "action": { "indent": "indentOutdent", "appendText": " * " }
+    },
+    {
+      "beforeText": "^\\s*/\\*\\*(?!/)([^\\*]|\\*(?!/))*$",
+      "action": { "indent": "none", "appendText": " * " }
+    },
+    {
+      "beforeText": "^(\\t|[ ])*[ ]\\*([ ]([^\\*]|\\*(?!/))*)?$",
+      "action": { "indent": "none", "appendText": "* " }
     }
-  ]
+  ],
+  "folding": {
+    "markers": {
+      "start": "^\\s*//\\s*#?region\\b",
+      "end": "^\\s*//\\s*#?endregion\\b"
+    }
+  }
 }

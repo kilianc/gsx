@@ -94,7 +94,7 @@ a:hover { text-decoration: underline; }
   display: flex;
   align-items: center;
   gap: 28px;
-  padding: 14px 28px;
+  padding: 14px 40px;
   background: color-mix(in srgb, var(--bg) 86%, transparent);
   backdrop-filter: saturate(1.6) blur(10px);
   border-bottom: 1px solid var(--border);
@@ -113,11 +113,23 @@ a:hover { text-decoration: underline; }
 
 .shell {
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
-  gap: 48px;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 40px 28px 80px;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 56px;
+  padding: 40px 40px 80px;
+}
+
+/*
+ * The page runs full width so code — especially the side-by-side source and
+ * generated output — gets all the room it can use. Prose does not: a line of
+ * text spanning a wide monitor is unreadable, so paragraphs and lists keep a
+ * comfortable measure while tables, code and the split panes expand.
+ */
+main > .section > p,
+main > .section > ul,
+main > .section > ol,
+main > .section > .note,
+.page-head {
+  max-width: 78ch;
 }
 
 .sidebar { position: sticky; top: 76px; align-self: start; }
@@ -236,7 +248,7 @@ p code, li code, td code {
 
 /* Layout helpers ---------------------------------------------------------- */
 
-.split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.split { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; }
 .split > div { min-width: 0; }
 
 .note {
@@ -290,7 +302,7 @@ th { font-weight: 620; color: var(--fg-muted); font-size: 12.5px; letter-spacing
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn-primary:hover { filter: brightness(1.08); }
 
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-bottom: 8px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-bottom: 8px; }
 .card {
   padding: 18px;
   background: var(--bg-raised);
@@ -302,6 +314,11 @@ th { font-weight: 620; color: var(--fg-muted); font-size: 12.5px; letter-spacing
 
 @media (max-width: 900px) {
   .shell { grid-template-columns: 1fr; gap: 24px; padding: 28px 20px 60px; }
+  main > .section > p,
+  main > .section > ul,
+  main > .section > ol,
+  main > .section > .note,
+  .page-head { max-width: none; }
   .sidebar { position: static; }
   .sidebar ul { display: flex; flex-wrap: wrap; gap: 4px; }
   .side-link { margin-left: 0; }

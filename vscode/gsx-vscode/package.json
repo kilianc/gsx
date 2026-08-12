@@ -27,7 +27,8 @@
     "webpack": "webpack --mode development",
     "compile": "webpack --mode production",
     "vscode:prepublish": "npm run compile",
-    "package": "vsce package --no-dependencies"
+    "package": "vsce package --no-dependencies",
+    "test": "node --test test/*.test.mjs"
   },
   "categories": [
     "Programming Languages"
@@ -59,8 +60,29 @@
     ],
     "commands": [
       {
+        "command": "gsx.generate",
+        "title": "GSX: Generate All",
+        "category": "GSX"
+      },
+      {
+        "command": "gsx.generateFile",
+        "title": "GSX: Generate Current File",
+        "category": "GSX"
+      },
+      {
+        "command": "gsx.dev",
+        "title": "GSX: Start Dev Server",
+        "category": "GSX"
+      },
+      {
+        "command": "gsx.openGenerated",
+        "title": "GSX: Open Generated Go File",
+        "category": "GSX"
+      },
+      {
         "command": "gsx.restartServer",
-        "title": "GSX: Restart Language Server"
+        "title": "GSX: Restart Language Server",
+        "category": "GSX"
       }
     ],
     "configuration": {
@@ -85,6 +107,11 @@
           "type": "string",
           "default": "",
           "description": "Path to the gsx executable. Use this if the extension can't find `gsx` in PATH."
+        },
+        "gsx.autoCloseTags": {
+          "type": "boolean",
+          "default": true,
+          "description": "Insert the matching closing tag when you type `>`."
         }
       }
     },
@@ -92,8 +119,85 @@
       "explorer.fileNesting.enabled": true,
       "explorer.fileNesting.patterns": {
         "*.gsx": "${capture}.gsx.go"
+      },
+      "[gsx]": {
+        "editor.linkedEditing": true,
+        "editor.suggest.showWords": false
       }
-    }
+    },
+    "snippets": [
+      {
+        "language": "gsx",
+        "path": "./snippets/gsx.json"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "gsx.openGenerated",
+          "when": "resourceExtname == .gsx",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "gsx.generateFile",
+          "when": "resourceExtname == .gsx",
+          "group": "gsx"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "gsx.generateFile",
+          "when": "resourceExtname == .gsx"
+        },
+        {
+          "command": "gsx.openGenerated",
+          "when": "resourceExtname == .gsx"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "gsx.openGenerated",
+        "key": "alt+o",
+        "when": "editorLangId == gsx"
+      }
+    ],
+    "problemMatchers": [
+      {
+        "name": "gsx",
+        "owner": "gsx",
+        "source": "gsx",
+        "fileLocation": [
+          "autoDetect",
+          "${workspaceFolder}"
+        ],
+        "pattern": [
+          {
+            "regexp": "^(.*\\.gsx):(\\d+):(\\d+):\\s+(.*)$",
+            "file": 1,
+            "line": 2,
+            "column": 3,
+            "message": 4
+          }
+        ]
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "gsx",
+        "required": [
+          "task"
+        ],
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "The gsx task to run"
+          }
+        }
+      }
+    ]
   },
   "devDependencies": {
     "@types/vscode": "1.95.0",

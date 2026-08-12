@@ -4,12 +4,17 @@ import path from "path";
 import { lookpath } from "lookpath";
 import { LanguageClient } from "vscode-languageclient/node";
 import { CustomLanguageClient } from "./custom-client";
+import { registerAutoCloseTag, registerLinkedEditing } from "./tags";
+import { registerCommands } from "./commands";
 
 export async function activate(ctx: vscode.ExtensionContext) {
   try {
     ctx.subscriptions.push(
       vscode.commands.registerCommand("gsx.restartServer", startLanguageClient),
     );
+    registerCommands(ctx);
+    registerAutoCloseTag(ctx);
+    registerLinkedEditing(ctx);
     await startLanguageClient();
   } catch (err) {
     const msg = err && (err as Error) ? (err as Error).message : "unknown";

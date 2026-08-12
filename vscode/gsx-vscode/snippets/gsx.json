@@ -1,0 +1,91 @@
+{
+  "Component": {
+    "prefix": "comp",
+    "description": "A component taking children",
+    "body": [
+      "func ${1:Name}(children ...Node) Node {",
+      "\treturn (",
+      "\t\t<${2:div} class=\"${3:class}\">",
+      "\t\t\t{children}",
+      "\t\t</${2:div}>",
+      "\t)",
+      "}"
+    ]
+  },
+  "Component with typed props": {
+    "prefix": "compprops",
+    "description": "A component with typed props and children",
+    "body": [
+      "func ${1:Name}(${2:title} ${3:string}, children ...Node) Node {",
+      "\treturn (",
+      "\t\t<section>",
+      "\t\t\t<h2>{${2:title}}</h2>",
+      "\t\t\t{children}",
+      "\t\t</section>",
+      "\t)",
+      "}"
+    ]
+  },
+  "Page layout": {
+    "prefix": "layout",
+    "description": "A full HTML document shell",
+    "body": [
+      "func ${1:Layout}(title string, children ...Node) Node {",
+      "\treturn (",
+      "\t\t<>",
+      "\t\t\t{Raw(\"<!doctype html>\")}",
+      "\t\t\t<html lang=\"en\">",
+      "\t\t\t\t<head>",
+      "\t\t\t\t\t<meta charset=\"utf-8\" />",
+      "\t\t\t\t\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />",
+      "\t\t\t\t\t<title>{title}</title>",
+      "\t\t\t\t</head>",
+      "\t\t\t\t<body>{children}</body>",
+      "\t\t\t</html>",
+      "\t\t</>",
+      "\t)",
+      "}"
+    ]
+  },
+  "Fragment": {
+    "prefix": "frag",
+    "description": "A fragment grouping siblings",
+    "body": ["<>", "\t$0", "</>"]
+  },
+  "Splice": {
+    "prefix": "sp",
+    "description": "A Go expression splice",
+    "body": ["{$0}"]
+  },
+  "JSX comment": {
+    "prefix": "cmt",
+    "description": "A comment dropped at compile time",
+    "body": ["{/* $0 */}"]
+  },
+  "Conditional node": {
+    "prefix": "if",
+    "description": "Render a node only when a condition holds",
+    "body": ["{If(${1:cond}, ${2:<span>yes</span>})}"]
+  },
+  "List from a slice": {
+    "prefix": "each",
+    "description": "Build a []Node from a slice and splice it",
+    "body": [
+      "var ${1:items} []Node",
+      "for _, ${2:v} := range ${3:values} {",
+      "\t${1:items} = append(${1:items}, <li>{${2:v}}</li>)",
+      "}"
+    ]
+  },
+  "Fixture registration": {
+    "prefix": "fixture",
+    "description": "Register a renderable fixture for the e2e harness",
+    "body": [
+      "func init() {",
+      "\tGSXFunctions[\"${1:name}\"] = func() Node {",
+      "\t\treturn ${2:Component}()",
+      "\t}",
+      "}"
+    ]
+  }
+}

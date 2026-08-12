@@ -364,7 +364,9 @@ func walkGSX(root string, add func(string) error) error {
 		}
 		if de.IsDir() {
 			name := de.Name()
-			if name == "vendor" || name == "node_modules" || name == "cursor-extension" || strings.HasPrefix(name, ".") {
+			// `testdata` is skipped by Go's own tooling, and by convention holds
+			// fixtures that are deliberately not buildable.
+			if name == "vendor" || name == "node_modules" || name == "testdata" || strings.HasPrefix(name, ".") {
 				return filepath.SkipDir
 			}
 			return nil
