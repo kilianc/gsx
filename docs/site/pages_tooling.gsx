@@ -128,8 +128,11 @@ func EditorsPage() Page {
 					Shell("go install github.com/kilianc/gsx/cmd/gsx@latest"),
 					P(Text("This is what the extension runs, so it has to be installed even if you only want editor support. "),
 						Text("The binary lands in "), Code("$(go env GOPATH)/bin"), Text(", which must be on your "), Code("PATH"), Text(".")),
-					P(Text("Check it:")),
-					Shell("gsx -h"),
+					P(Text("Check it, and see which build you have:")),
+					Shell(`gsx -h
+gsx -version`),
+					P(Text("A binary installed at a tag reports that tag — "), Code("gsx v0.2.0 go1.22.5 darwin/arm64"),
+						Text(" — so it is worth pasting into a bug report. One built from a checkout reports the commit instead.")),
 
 					<h3>2. The extension</h3>,
 					P(Text("It is not on the Marketplace yet, so build it from the repository. This needs "),
