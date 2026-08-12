@@ -517,3 +517,156 @@ func TestFormattingBrokenSourceMakesNoEdits(t *testing.T) {
 		t.Errorf("result = %v, want null for unparseable source", msg.Result)
 	}
 }
+
+// publishDiagnostics replaces the whole set for a URI. gopls publishes for the
+// same file moments after GSX does, so without merging, a parse error appears
+// and is immediately wiped — which is what happened in a real editor: the
+// language server reported the error and the editor showed none.
+func TestGSXDiagnosticsSurviveGoplsPublish(t *testing.T) {
+	st := newState()
+
+	open := mustMarshal(t, rpcMsg{
+		JSONRPC: "2.0",
+		Method:  "textDocument/didOpen",
+		Params: rawPtr(mustMarshal(t, map[string]any{
+			"textDocument": map[string]any{
+				"uri": "file:///test/page.gsx", "languageId": "gsx", "version": 1,
+				"text": "package demo\n\nfunc F() Node {\n\treturn <div>hi</span>\n}\n",
+			},
+		})),
+	})
+	if _, err := st.rewriteClientToGopls(open); err != nil {
+		t.Fatal(err)
+	}
+
+	// The GSX parse error is published first.
+	first := st.popPendingDiagnostic()
+	if first == nil {
+		t.Fatal("no GSX diagnostic published")
+	}
+	if !strings.Contains(string(first), "mismatched closing tag") {
+		t.Fatalf("first publish is not the parse error: %s", first)
+	}
+
+	// Now gopls publishes its own set for the generated file.
+	goplsMsg := mustMarshal(t, rpcMsg{
+		JSONRPC: "2.0",
+		Method:  "textDocument/publishDiagnostics",
+		Params: rawPtr(mustMarshal(t, map[string]any{
+			"uri": "file:///test/page.gsx.go",
+			"diagnostics": []map[string]any{{
+				"range": map[string]any{
+					"start": map[string]any{"line": 0, "character": 0},
+					"end":   map[string]any{"line": 0, "character": 1},
+				},
+				"severity": 1,
+				"message":  "something from gopls",
+			}},
+		})),
+	})
+	out, err := st.rewriteGoplsToClient(goplsMsg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var p struct {
+		URI         string `json:"uri"`
+		Diagnostics []struct {
+			Message string `json:"message"`
+		} `json:"diagnostics"`
+	}
+	var msg rpcMsg
+	if err := json.Unmarshal(out, &msg); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(*msg.Params, &p); err != nil {
+		t.Fatal(err)
+	}
+
+	if p.URI != "file:///test/page.gsx" {
+		t.Errorf("uri = %q, want the .gsx URI", p.URI)
+	}
+	var sawGSX, sawGopls bool
+	for _, d := range p.Diagnostics {
+		if strings.Contains(d.Message, "mismatched closing tag") {
+			sawGSX = true
+		}
+		if strings.Contains(d.Message, "something from gopls") {
+			sawGopls = true
+		}
+	}
+	if !sawGSX {
+		t.Error("the GSX parse error was dropped when gopls published")
+	}
+	if !sawGopls {
+		t.Error("gopls diagnostics were dropped")
+	}
+}
+
+// A position that cannot be mapped must be answered, not forwarded. Forwarding
+// sends gopls a .gsx URI it was never told about, and it replies with an error
+// that the editor shows as "Request textDocument/hover failed" on every hover.
+func TestUnmappablePositionIsAnsweredNotForwarded(t *testing.T) {
+	st := newState()
+
+	// A file that does not compile has no source map, so nothing maps.
+	open := mustMarshal(t, rpcMsg{
+		JSONRPC: "2.0",
+		Method:  "textDocument/didOpen",
+		Params: rawPtr(mustMarshal(t, map[string]any{
+			"textDocument": map[string]any{
+				"uri": "file:///test/bad.gsx", "languageId": "gsx", "version": 1,
+				"text": "package demo\n\nfunc F() Node {\n\treturn <div>hi</span>\n}\n",
+			},
+		})),
+	})
+	if _, err := st.rewriteClientToGopls(open); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.popPendingDiagnostic()
+
+	for _, method := range []string{"textDocument/hover", "textDocument/definition", "textDocument/completion"} {
+		t.Run(method, func(t *testing.T) {
+			req := mustMarshal(t, rpcMsg{
+				JSONRPC: "2.0", ID: 99, Method: method,
+				Params: rawPtr(mustMarshal(t, map[string]any{
+					"textDocument": map[string]any{"uri": "file:///test/bad.gsx"},
+					"position":     map[string]any{"line": 3, "character": 6},
+				})),
+			})
+			out, err := st.rewriteClientToGopls(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out != nil {
+				t.Errorf("request was forwarded to gopls: %s", out)
+			}
+			resp := st.popPendingDiagnostic()
+			if resp == nil {
+				t.Fatal("no response produced; the client would hang or error")
+			}
+			if !strings.Contains(string(resp), `"id":99`) {
+				t.Errorf("response does not answer the request: %s", resp)
+			}
+		})
+	}
+}
+
+// The virtual Go view for a file that fails to compile must still declare the
+// package the rest of the directory uses. A placeholder of `package p` made
+// gopls report "found packages main and p" for every file in the folder, and
+// those diagnostics buried the parse error that caused them.
+func TestPackageNameOf(t *testing.T) {
+	tests := []struct{ src, want string }{
+		{"package main\n\nfunc F() {}", "main"},
+		{"// a comment\n\npackage ui\n", "ui"},
+		{"\n\npackage  spaced \n", "spaced"},
+		{"no package clause at all", "p"},
+		{"", "p"},
+	}
+	for _, tt := range tests {
+		if got := packageNameOf(tt.src); got != tt.want {
+			t.Errorf("packageNameOf(%q) = %q, want %q", tt.src, got, tt.want)
+		}
+	}
+}

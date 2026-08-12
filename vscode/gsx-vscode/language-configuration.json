@@ -1,36 +1,112 @@
 {
   "comments": {
     "lineComment": "//",
-    "blockComment": ["/*", "*/"]
+    "blockComment": [
+      "/*",
+      "*/"
+    ]
   },
+  "_comment_brackets": "`<`/`>` are deliberately NOT brackets. Adding them makes every Go comparison and shift operator render as an unmatched bracket, i.e. bright red, throughout ordinary Go code.",
   "brackets": [
-    ["{", "}"],
-    ["[", "]"],
-    ["(", ")"],
-    ["<", ">"]
+    [
+      "{",
+      "}"
+    ],
+    [
+      "[",
+      "]"
+    ],
+    [
+      "(",
+      ")"
+    ]
   ],
   "autoClosingPairs": [
-    { "open": "{", "close": "}" },
-    { "open": "[", "close": "]" },
-    { "open": "(", "close": ")" },
-    { "open": "\"", "close": "\"", "notIn": ["string"] },
-    { "open": "`", "close": "`", "notIn": ["string"] },
-    { "open": "'", "close": "'", "notIn": ["string", "comment"] },
-    { "open": "/*", "close": " */", "notIn": ["string"] }
+    {
+      "open": "{",
+      "close": "}"
+    },
+    {
+      "open": "[",
+      "close": "]"
+    },
+    {
+      "open": "(",
+      "close": ")"
+    },
+    {
+      "open": "\"",
+      "close": "\"",
+      "notIn": [
+        "string"
+      ]
+    },
+    {
+      "open": "`",
+      "close": "`",
+      "notIn": [
+        "string"
+      ]
+    },
+    {
+      "open": "'",
+      "close": "'",
+      "notIn": [
+        "string",
+        "comment"
+      ]
+    },
+    {
+      "open": "/*",
+      "close": " */",
+      "notIn": [
+        "string"
+      ]
+    }
   ],
   "surroundingPairs": [
-    ["{", "}"],
-    ["[", "]"],
-    ["(", ")"],
-    ["\"", "\""],
-    ["`", "`"],
-    ["'", "'"],
-    ["<", ">"]
+    [
+      "{",
+      "}"
+    ],
+    [
+      "[",
+      "]"
+    ],
+    [
+      "(",
+      ")"
+    ],
+    [
+      "\"",
+      "\""
+    ],
+    [
+      "`",
+      "`"
+    ],
+    [
+      "'",
+      "'"
+    ],
+    [
+      "<",
+      ">"
+    ]
   ],
   "colorizedBracketPairs": [
-    ["{", "}"],
-    ["[", "]"],
-    ["(", ")"]
+    [
+      "{",
+      "}"
+    ],
+    [
+      "[",
+      "]"
+    ],
+    [
+      "(",
+      ")"
+    ]
   ],
   "autoCloseBefore": ";:.,=}])><`'\" \n\t",
   "wordPattern": "(-?\\d*\\.\\d\\w*)|([^\\`\\~\\!\\@\\#\\%\\^\\&\\*\\(\\)\\-\\=\\+\\[\\{\\]\\}\\\\\\|\\;\\:\\'\\\"\\,\\.\\<\\>\\/\\?\\s]+)",
@@ -43,36 +119,53 @@
       "comment": "Pressing enter between a tag pair indents the body and puts the close tag on its own line.",
       "beforeText": "<(?!\\/)([a-zA-Z][a-zA-Z0-9._-]*)(?:\\s[^<>]*)?>$",
       "afterText": "^<\\/([a-zA-Z][a-zA-Z0-9._-]*)>",
-      "action": { "indent": "indentOutdent" }
+      "action": {
+        "indent": "indentOutdent"
+      }
     },
     {
       "comment": "Enter after an opening tag indents the body.",
       "beforeText": "<(?!\\/)([a-zA-Z][a-zA-Z0-9._-]*)(?:\\s[^<>]*)?>$",
-      "action": { "indent": "indent" }
+      "action": {
+        "indent": "indent"
+      }
     },
     {
       "comment": "Enter between a fragment pair.",
       "beforeText": "<>$",
       "afterText": "^<\\/>",
-      "action": { "indent": "indentOutdent" }
+      "action": {
+        "indent": "indentOutdent"
+      }
     },
     {
       "beforeText": "<>$",
-      "action": { "indent": "indent" }
+      "action": {
+        "indent": "indent"
+      }
     },
     {
       "comment": "Continue a block comment.",
       "beforeText": "^\\s*/\\*\\*(?!/)([^\\*]|\\*(?!/))*$",
       "afterText": "^\\s*\\*/$",
-      "action": { "indent": "indentOutdent", "appendText": " * " }
+      "action": {
+        "indent": "indentOutdent",
+        "appendText": " * "
+      }
     },
     {
       "beforeText": "^\\s*/\\*\\*(?!/)([^\\*]|\\*(?!/))*$",
-      "action": { "indent": "none", "appendText": " * " }
+      "action": {
+        "indent": "none",
+        "appendText": " * "
+      }
     },
     {
       "beforeText": "^(\\t|[ ])*[ ]\\*([ ]([^\\*]|\\*(?!/))*)?$",
-      "action": { "indent": "none", "appendText": "* " }
+      "action": {
+        "indent": "none",
+        "appendText": "* "
+      }
     }
   ],
   "folding": {
