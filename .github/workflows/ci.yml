@@ -58,3 +58,15 @@ jobs:
 
       - name: Typecheck extension
         run: make extension-check
+
+      # Packaging is the one step that cannot be verified in a constrained
+      # sandbox — installing webpack and vsce needs a working npm — so CI is
+      # where it gets proven, and the artifact is what people install.
+      - name: Package extension
+        run: make vsix
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gsx-vscode
+          path: vscode/gsx-vscode/*.vsix
+          if-no-files-found: error
