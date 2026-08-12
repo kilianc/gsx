@@ -179,6 +179,94 @@ func EditorsPage() Page {
 				),
 			),
 			Section(
+				"editing",
+				"Editing",
+				P(
+					Text(
+						"The extension adds the editing behaviour a JSX-like language needs, none of which can come from the language server — it has to react to a keystroke before the buffer is parseable:",
+					),
+				),
+				html.Ul(
+					html.Li(
+						html.Strong(Text("Auto-close tags.")),
+						Text(" Typing "),
+						html.Code(Text(">")),
+						Text(
+							" inserts the matching closing tag and leaves the caret between them. Void elements and self-closing tags are left alone.",
+						),
+					),
+					html.Li(
+						html.Strong(Text("Linked editing.")),
+						Text(" Renaming an opening tag renames its closing tag as you type."),
+					),
+					html.Li(
+						html.Strong(Text("Snippets.")),
+						Text(" "),
+						html.Code(Text("comp")),
+						Text(", "),
+						html.Code(Text("layout")),
+						Text(", "),
+						html.Code(Text("frag")),
+						Text(", "),
+						html.Code(Text("each")),
+						Text(", "),
+						html.Code(Text("if")),
+						Text(" and friends."),
+					),
+					html.Li(
+						html.Strong(Text("Indentation.")),
+						Text(
+							" Pressing enter between a tag pair indents the body and puts the closing tag on its own line.",
+						),
+					),
+					html.Li(
+						html.Strong(Text("File nesting.")),
+						Text(" Generated "),
+						html.Code(Text(".gsx.go")),
+						Text(" files collapse under their source."),
+					),
+				),
+				P(
+					Text(
+						"Syntax highlighting understands the boundary between Go and markup: components are coloured differently from HTML elements, prose between tags is not highlighted as Go, and a comparison like ",
+					),
+					Code("a < b"),
+					Text(" is never mistaken for a tag."),
+				),
+				html.H3(Text("Commands")),
+				html.Table(
+					html.THead(html.Tr(html.Th(Text("Command")), html.Th(Text("Does")))),
+					html.TBody(
+						html.Tr(
+							html.Td(Text("GSX: Generate All")),
+							html.Td(html.Code(Text("gsx ./...")), Text(" in a terminal")),
+						),
+						html.Tr(
+							html.Td(Text("GSX: Generate Current File")),
+							html.Td(Text("regenerate just this file")),
+						),
+						html.Tr(
+							html.Td(Text("GSX: Start Dev Server")),
+							html.Td(html.Code(Text("gsx dev"))),
+						),
+						html.Tr(
+							html.Td(Text("GSX: Open Generated Go File")),
+							html.Td(
+								Text("open the "),
+								html.Code(Text(".gsx.go")),
+								Text(" beside the editor ("),
+								html.Code(Text("alt+o")),
+								Text(")"),
+							),
+						),
+						html.Tr(
+							html.Td(Text("GSX: Restart Language Server")),
+							html.Td(Text("restart "), html.Code(Text("gsx lsp"))),
+						),
+					),
+				),
+			),
+			Section(
 				"vscode",
 				"VS Code and Cursor",
 				P(
@@ -196,8 +284,16 @@ func EditorsPage() Page {
 					Code("gsx lsp"),
 					Text(" for every "),
 					Code(".gsx"),
-					Text(" file and nests generated files under their source in the explorer."),
+					Text(" file."),
 				),
+				P(
+					Text(
+						"Building it needs Node, which GSX itself does not. The toolchain is pinned in ",
+					),
+					Code("tools/Dockerfile"),
+					Text(", so no JS toolchain is installed on your machine:"),
+				),
+				Shell("make vsix"),
 				Note(
 					P(
 						Text("On macOS, "),

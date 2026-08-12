@@ -84,12 +84,38 @@ func EditorsPage() Page {
 					P(Text("GSX's own parse errors are reported directly, positioned on the offending character.")),
 				)}
 
+				{Section("editing", "Editing",
+					P(Text("The extension adds the editing behaviour a JSX-like language needs, none of which can come from the language server — it has to react to a keystroke before the buffer is parseable:")),
+					<ul>
+						<li><strong>Auto-close tags.</strong> Typing <code>&gt;</code> inserts the matching closing tag and leaves the caret between them. Void elements and self-closing tags are left alone.</li>
+						<li><strong>Linked editing.</strong> Renaming an opening tag renames its closing tag as you type.</li>
+						<li><strong>Snippets.</strong> <code>comp</code>, <code>layout</code>, <code>frag</code>, <code>each</code>, <code>if</code> and friends.</li>
+						<li><strong>Indentation.</strong> Pressing enter between a tag pair indents the body and puts the closing tag on its own line.</li>
+						<li><strong>File nesting.</strong> Generated <code>.gsx.go</code> files collapse under their source.</li>
+					</ul>,
+					P(Text("Syntax highlighting understands the boundary between Go and markup: components are coloured differently from HTML elements, prose between tags is not highlighted as Go, and a comparison like "),
+						Code("a < b"), Text(" is never mistaken for a tag.")),
+					<h3>Commands</h3>,
+					<table>
+						<thead><tr><th>Command</th><th>Does</th></tr></thead>
+						<tbody>
+							<tr><td>GSX: Generate All</td><td><code>gsx ./...</code> in a terminal</td></tr>
+							<tr><td>GSX: Generate Current File</td><td>regenerate just this file</td></tr>
+							<tr><td>GSX: Start Dev Server</td><td><code>gsx dev</code></td></tr>
+							<tr><td>GSX: Open Generated Go File</td><td>open the <code>.gsx.go</code> beside the editor (<code>alt+o</code>)</td></tr>
+							<tr><td>GSX: Restart Language Server</td><td>restart <code>gsx lsp</code></td></tr>
+						</tbody>
+					</table>,
+				)}
+
 				{Section("vscode", "VS Code and Cursor",
 					P(Text("Install the extension from "), Code("vscode/gsx-vscode/"), Text(", and make sure "),
 						Code("gsx"), Text(" is on your "), Code("PATH"), Text(":")),
 					Shell("go install github.com/kilianc/gsx/cmd/gsx@latest"),
-					P(Text("The extension starts "), Code("gsx lsp"), Text(" for every "), Code(".gsx"),
-						Text(" file and nests generated files under their source in the explorer.")),
+					P(Text("The extension starts "), Code("gsx lsp"), Text(" for every "), Code(".gsx"), Text(" file.")),
+					P(Text("Building it needs Node, which GSX itself does not. The toolchain is pinned in "),
+						Code("tools/Dockerfile"), Text(", so no JS toolchain is installed on your machine:")),
+					Shell("make vsix"),
 					Note(P(Text("On macOS, "), Code("gsx"), Text(" collides with Ghostscript's "), Code("gsx"),
 						Text(" if that is installed. The extension prefers a workspace-local "), Code("./bin/gsx"),
 						Text(" and the usual Go install paths before falling back to "), Code("PATH"),

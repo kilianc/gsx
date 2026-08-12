@@ -36,3 +36,22 @@ jobs:
 
       - name: Test
         run: go test ./...
+
+  extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A TextMate grammar cannot be verified by reading it, so the fixtures are
+      # tokenized with the same engine VS Code uses.
+      - name: Build tools image
+        run: docker build -f tools/Dockerfile -t gsx-tools .
+
+      - name: Grammar tokenization
+        run: make grammar-test
+
+      - name: Extension tests
+        run: make extension-test
+
+      - name: Typecheck extension
+        run: make extension-check

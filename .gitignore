@@ -9,6 +9,7 @@
 # Editor extension build artifacts
 vscode/gsx-vscode/node_modules/
 vscode/gsx-vscode/dist/
+vscode/gsx-vscode/*.vsix
 
 # Local scratch
 .tmp/

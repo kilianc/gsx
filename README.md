@@ -154,8 +154,17 @@ Full details in the [language reference](https://kilianc.github.io/gsx/language.
 back, so `.gsx` files get diagnostics, hover, go-to-definition and completion. GSX's own
 parse errors are reported on the offending character.
 
-A VS Code / Cursor extension lives in [`vscode/gsx-vscode/`](vscode/gsx-vscode). See the
-[editor setup guide](https://kilianc.github.io/gsx/editors.html).
+The VS Code / Cursor extension in [`vscode/gsx-vscode/`](vscode/gsx-vscode) adds the editing
+behaviour a JSX-like language needs:
+
+- **Auto-close tags** — typing `>` inserts the closing tag, leaving the caret between them
+- **Linked editing** — renaming an opening tag renames its closing tag as you type
+- **Syntax highlighting** that knows the Go/markup boundary: components colour differently
+  from elements, prose is not highlighted as Go, and `a < b` is never mistaken for a tag
+- **Snippets** — `comp`, `layout`, `frag`, `each`, `if`
+- **Commands** — generate, dev server, and open the generated `.gsx.go` side by side
+
+See the [editor setup guide](https://kilianc.github.io/gsx/editors.html).
 
 ## Embedding the compiler
 
@@ -170,10 +179,20 @@ The internal compiler under `internal/gsx/...` is not part of the public API.
 ## Developing
 
 ```bash
-make ci       # check generated files, vet, test
-make golden   # regenerate goldens after a compiler change, then test
-make docs     # build the documentation site into docs/dist
+make ci            # check generated files, vet, test
+make golden        # regenerate goldens after a compiler change, then test
+make docs          # build the documentation site into docs/dist
+make ci-extension  # grammar + extension tests, typecheck
+make vsix          # package the editor extension
 ```
+
+The extension is the only part of this repository that needs Node, and it never touches your
+machine: the toolchain is pinned in [`tools/Dockerfile`](tools/Dockerfile) and every
+extension target runs in that container.
+
+A TextMate grammar cannot be verified by reading it, so `make grammar-test` tokenizes
+fixtures with the same engine VS Code uses and asserts on the resulting scopes — including
+that Go's `a < b`, `a << 2` and `<-ch` never scope as tags.
 
 The `e2e/` package uses strict golden tests. The generated `*.gsx.go` **is** the golden —
 it is compiled into the test binary, so a golden that does not build fails the package
