@@ -48,9 +48,9 @@ docs-prose: ## Serve the docs without building the playground bundle
 wasm: ## Type-check the playground's browser build
 	GOOS=js GOARCH=wasm go build -o /dev/null ./cmd/gsx-wasm
 
-.PHONY: playground
-playground:
-	go run ./cmd/playground
+.PHONY: localplay
+localplay: ## Watch localplay/page.gsx and regenerate it with the working-tree compiler
+	go run ./cmd/localplay
 
 # The extension is the only part of this repository that needs Node, so it is
 # built in a pinned container rather than requiring a JS toolchain on the host.
