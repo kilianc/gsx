@@ -1,6 +1,6 @@
 // Command demogen renders the frames of the README demo animation.
 //
-// Everything on screen is real: the left pane is cmd/demogen/ui/greeting.gsx
+// Everything on screen is real: the left pane is cmd/demogen/ui/cart.gsx
 // verbatim, the right pane is what the compiler produces from it, and the strip
 // along the bottom is the HTML that component actually renders. Nothing is
 // mocked up, so a change to the compiler or the highlighter shows up in the next
@@ -26,7 +26,7 @@ import (
 	"github.com/kilianc/gsx/pkg/gsx"
 )
 
-//go:embed ui/greeting.gsx
+//go:embed ui/cart.gsx
 var source string
 
 // frame is one rendered still: how much of each pane has been typed, and what
@@ -37,6 +37,14 @@ type frame struct {
 	caret    byte // 'g' in the source pane, 'o' in the generated pane, 0 for none
 	pill     bool
 	preview  bool
+}
+
+// demoItems are what the loop in the demo source runs over. Three is enough to
+// show repetition, and one on sale exercises the branch inside it.
+var demoItems = []ui.Item{
+	{Name: "Keyboard"},
+	{Name: "Monitor", Sale: true},
+	{Name: "Desk mat"},
 }
 
 func main() {
@@ -51,14 +59,14 @@ func main() {
 
 	// The generated pane is the compiler's own output for the file in the left
 	// pane, minus the header a reader does not need to see typed out.
-	compiled, err := gsx.CompileFile("greeting.gsx", []byte(src+"\n"))
+	compiled, err := gsx.CompileFile("cart.gsx", []byte(src+"\n"))
 	if err != nil {
 		log.Fatalf("demogen: compiling the demo source: %v", err)
 	}
 	gen := trimHeader(string(compiled))
 
 	var page strings.Builder
-	if err := ui.Greeting("Gopher").Render(&page); err != nil {
+	if err := ui.Cart(demoItems).Render(&page); err != nil {
 		log.Fatalf("demogen: rendering the demo component: %v", err)
 	}
 
@@ -117,7 +125,7 @@ func timeline(src, gen []rune) []frame {
 	// pane, which is the beat that says the Go is generated rather than written.
 	add(5, frame{gsxRunes: len(src), pill: true})
 
-	const typeGen = 26
+	const typeGen = 30
 	for i := 1; i <= typeGen; i++ {
 		add(1, frame{gsxRunes: len(src), goRunes: len(gen) * i / typeGen, caret: 'o', pill: true})
 	}
@@ -160,8 +168,9 @@ func pane(text []rune, n int, caret bool) template.HTML {
 	return template.HTML(out)
 }
 
-// The window is 920x368 because that is the size the README displays. It is
-// captured at twice that, which is the entire point of the exercise.
+// The window is 920 wide because that is the width the README displays, and
+// tall enough for the loop to fit without scrolling. It is captured at twice
+// that, which is the entire point of the exercise.
 //
 // The palette is the site's dark one: the site itself is light everywhere now,
 // but a code window in a README is read as a screenshot of an editor, and every
@@ -182,9 +191,9 @@ var tmpl = template.Must(template.New("frame").Parse(`<!doctype html>
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; }
-  body { width: 920px; height: 368px; overflow: hidden; font-family: var(--sans); }
+  body { width: 920px; height: 430px; overflow: hidden; font-family: var(--sans); }
 
-  .win { width: 920px; height: 368px; background: var(--win); display: flex; flex-direction: column; }
+  .win { width: 920px; height: 430px; background: var(--win); display: flex; flex-direction: column; }
 
   .bar { height: 36px; flex: none; background: var(--chrome); display: flex; align-items: center; padding: 0 14px; position: relative; }
   .dot { width: 11px; height: 11px; border-radius: 50%; margin-right: 7px; }
@@ -192,7 +201,10 @@ var tmpl = template.Must(template.New("frame").Parse(`<!doctype html>
   .title { position: absolute; left: 0; right: 0; text-align: center; font-size: 12px; color: var(--muted); }
 
   .tabs { height: 34px; flex: none; display: flex; border-bottom: 1px solid var(--line); }
-  .tab { width: 460px; padding: 0 18px; display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; color: var(--fg); }
+  .tab { padding: 0 18px; display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; color: var(--fg); }
+  /* The generated pane is wider: the same code with html. prefixes on it. */
+  .tab-l { width: 430px; }
+  .tab-r { width: 490px; }
   /* The underline marks the file, not the pane, so it sits on the label. */
   .tab .name { align-self: stretch; display: flex; align-items: center; }
   .tab.is-active .name { box-shadow: inset 0 -2px 0 var(--accent); }
@@ -201,11 +213,11 @@ var tmpl = template.Must(template.New("frame").Parse(`<!doctype html>
   .panes { flex: 1; display: flex; position: relative; min-height: 0; }
   /* The source is tab-indented; two columns is what the editor and the docs
      site both show, and eight would push the generated pane off its own edge. */
-  .pane { width: 460px; margin: 0; padding: 14px 18px; font: 12.5px/20px var(--mono);
+  .pane { width: 430px; margin: 0; padding: 14px 18px; font: 11.5px/17px var(--mono);
           color: var(--fg); white-space: pre; overflow: hidden; tab-size: 2; -moz-tab-size: 2; }
-  .pane-r { border-left: 1px solid var(--line); }
+  .pane-r { width: 490px; border-left: 1px solid var(--line); }
 
-  .caret { display: inline-block; width: 7px; height: 15px; background: var(--accent); vertical-align: -3px; }
+  .caret { display: inline-block; width: 6px; height: 13px; background: var(--accent); vertical-align: -3px; }
 
   .pill { position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%);
           padding: 4px 12px; border: 1px solid var(--accent); border-radius: 999px;
@@ -215,9 +227,10 @@ var tmpl = template.Must(template.New("frame").Parse(`<!doctype html>
   .waiting { height: 100%; display: flex; align-items: center; padding: 0 18px; font-size: 12.5px; color: var(--muted); }
   .browser { height: 100%; background: #fbfbfa; padding: 8px 18px; }
   .url { font: 11px/1.6 var(--mono); color: #92929c; }
-  .page { display: flex; align-items: baseline; gap: 14px; }
-  .page h1 { margin: 0; font-size: 21px; letter-spacing: -0.02em; color: #1a1a1c; }
-  .page p { margin: 0; font-size: 13.5px; color: #6b6b73; }
+  .cart { display: flex; gap: 8px; list-style: none; margin: 8px 0 0; padding: 0; }
+  .cart li { font-size: 13px; padding: 5px 12px; border-radius: 999px; background: #ececea; color: #1a1a1c; }
+  /* The light shade of Gopher Blue: this strip is the rendered page, not chrome. */
+  .cart .sale { background: #007d9c; color: #fff; font-weight: 600; }
 
   .hl-c  { color: #6f6f7b; font-style: italic; }
   .hl-s  { color: #6ee7a8; }
@@ -232,11 +245,11 @@ var tmpl = template.Must(template.New("frame").Parse(`<!doctype html>
 <div class="win">
   <div class="bar">
     <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
-    <span class="title">gsx dev &mdash; ~/hello</span>
+    <span class="title">gsx dev &mdash; ~/shop</span>
   </div>
   <div class="tabs">
-    <div class="tab is-active"><span class="name">greeting.gsx</span></div>
-    <div class="tab"><span class="name">greeting.gsx.go</span> <span class="note">generated</span></div>
+    <div class="tab tab-l is-active"><span class="name">cart.gsx</span></div>
+    <div class="tab tab-r"><span class="name">cart.gsx.go</span> <span class="note">generated</span></div>
   </div>
   <div class="panes">
     <pre class="pane">{{.GSX}}</pre>
