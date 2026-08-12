@@ -189,6 +189,15 @@ func GSX(src string) Node {
 	return codeBlock("gsx", highlight.HTML(strings.TrimSpace(src)))
 }
 
+// Labeled renders a highlighted snippet under a small caption, for side-by-side
+// comparisons where the reader has to know which language they are looking at.
+//
+// The highlighter is GSX's, but Go and JavaScript share enough keywords — and
+// the tag syntax is the same in both — that a JSX snippet reads correctly.
+func Labeled(label, src string) Node {
+	return codeBlock("gsx", `<span class="hl-out-label">`+label+`</span>`+highlight.HTML(strings.TrimSpace(src)))
+}
+
 // Out renders generated output or rendered HTML, shown unhighlighted so it
 // reads as a result rather than as something to write.
 func Out(label, src string) Node {

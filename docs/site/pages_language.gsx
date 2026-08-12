@@ -4,7 +4,7 @@ func LanguagePage() Page {
 	return Page{
 		Slug:     "language",
 		Title:    "Language reference",
-		Subtitle: "Everything GSX adds to Go, and exactly what each form compiles to.",
+		Subtitle: "Every JSX form GSX understands, what it means in Go, and exactly what each one compiles to.",
 		Body:     (
 			<>
 				{Section("tags", "Tag expressions",
@@ -45,6 +45,54 @@ html.Div(
 `),
 					),
 					P(Text("GSX picks the wrapper from the type it infers. There is no implicit stringification: splicing something that is neither a string nor a Node is a Go compile error at the call site, not a silent "), Code("%v"), Text(".")),
+				)}
+
+				{Section("control", "Go is the control flow",
+					P(Text("GSX adds tags and splices. It deliberately adds "), Em("no"), Text(" directives — there is no "),
+						Code("{{range}}"), Text(", no "), Code("{{if}}"), Text(", no filter pipeline. Repetition and branching are written in Go, "),
+						Text("because a tag is an expression and goes wherever an expression goes.")),
+					<h3>Loops</h3>,
+					P(Text("Build a "), Code("[]Node"), Text(" with an ordinary loop and splice it. This is the Go spelling of JSX's "),
+						Code(".map()"), Text(":")),
+					Compiled(`
+func Tags(tags []string) Node {
+  var lis []Node
+  for _, t := range tags {
+    lis = append(lis, <li class="tag">{t}</li>)
+  }
+  return <ul class="tags">{lis}</ul>
+}
+`),
+					<h3>Branches</h3>,
+					P(Text("Inside markup, gomponents' "), Code("If"), Text(" plays the part of JSX's "), Code("&&"),
+						Text(". Around markup, use whichever Go form reads best — an early return, a "), Code("switch"),
+						Text(", a lookup in a map:")),
+					Compiled(`
+func Status(s State, retries int) Node {
+  if retries > 3 {
+    return <p class="error">Giving up.</p>
+  }
+
+  switch s {
+  case Loading:
+    return <p>Loading…</p>
+  case Failed:
+    return <p class="error">Something went wrong.</p>
+  }
+  return <p>Ready</p>
+}
+`),
+					<h3>Everything else</h3>,
+					P(Text("There is no list of supported constructs, because there is nothing interpreting them. "),
+						Text("GSX rewrites tags into function calls and leaves the rest of the file alone, so the rest of the file is just Go:")),
+					<ul>
+						<li>Assign markup to a variable and splice it somewhere else, or several times.</li>
+						<li>Pass a <code>Node</code> into a function, return one from a method, store one in a struct field.</li>
+						<li>Closures, generics, <code>defer</code>, goroutines — GSX never looks at them.</li>
+					</ul>,
+					Note(P(Text("One consequence worth knowing: markup is evaluated eagerly, like any Go expression. "),
+						Code("If(cond, expensive())"), Text(" still calls "), Code("expensive()"),
+						Text(". Guard with a real "), Code("if"), Text(" when the branch must not run."))),
 				)}
 
 				{Section("fragments", "Fragments",
