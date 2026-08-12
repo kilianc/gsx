@@ -68,18 +68,39 @@ const DARK = {
   punct: "75757f", fg: "ececf0", bg: "161619",
 };
 
+// Bracket highlighting paints brackets by nesting depth from its own palette,
+// over whatever the grammar said. Turning it off in the editor options is not
+// enough on its own, so the palette is also collapsed to the one colour that
+// marks the Go/markup boundary: whichever path is live, a `{...}` splice comes
+// out the same, and a stray bracket still stands out.
+function bracketColors(c) {
+  const colors = { "editorBracketHighlight.unexpectedBracket.foreground": "#" + c.tag };
+  for (let i = 1; i <= 6; i++) {
+    colors["editorBracketHighlight.foreground" + i] = "#" + c.brace;
+  }
+  return colors;
+}
+
 function defineThemes() {
   monaco.editor.defineTheme("gsx-light", {
     base: "vs",
     inherit: true,
     rules: themeRules(LIGHT),
-    colors: { "editor.background": "#" + LIGHT.bg, "editor.foreground": "#" + LIGHT.fg },
+    colors: {
+      "editor.background": "#" + LIGHT.bg,
+      "editor.foreground": "#" + LIGHT.fg,
+      ...bracketColors(LIGHT),
+    },
   });
   monaco.editor.defineTheme("gsx-dark", {
     base: "vs-dark",
     inherit: true,
     rules: themeRules(DARK),
-    colors: { "editor.background": "#" + DARK.bg, "editor.foreground": "#" + DARK.fg },
+    colors: {
+      "editor.background": "#" + DARK.bg,
+      "editor.foreground": "#" + DARK.fg,
+      ...bracketColors(DARK),
+    },
   });
 }
 
