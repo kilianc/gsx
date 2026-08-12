@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # The tag should never point at something that does not build.
+      - name: Verify
+        run: |
+          go build ./...
+          go vet ./...
+          go run ./cmd/gsx -check ./...
+          go run ./cmd/gsx fmt -l ./...
+          go test ./...
+
+      - name: Build tools image
+        run: docker build -f tools/Dockerfile -t gsx-tools .
+
+      - name: Package extension
+        run: make vsix
+
+      # The extension is not on the Marketplace, so the .vsix attached here is
+      # how people install it: `code --install-extension gsx-vscode-*.vsix`.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" vscode/gsx-vscode/*.vsix --clobber
