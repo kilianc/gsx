@@ -18,9 +18,6 @@
   <img src="assets/gsx-demo.gif" alt="Typing a .gsx file, the generated .gsx.go appearing beside it, and the page reloading" width="920" />
 </p>
 
-> [!WARNING]
-> mostly AI generated, not used in production yet, I would not use this if I were you
-
 ---
 
 ## Start simple
