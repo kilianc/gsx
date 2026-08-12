@@ -16,17 +16,21 @@ const stylesheet = `
   --fg-muted: #6b6b73;
   --fg-faint: #92929c;
   --border: #e6e6e2;
-  --accent: #6d4aff;
-  --accent-soft: #f0ecff;
+  /* Go's Gopher Blue. The brand colour itself, #00add8, carries only 2.4:1
+     against this background, so text and fills use the darker brand shade —
+     the same swap go.dev makes — and #00add8 is kept for dark backgrounds,
+     which here means only the logo variants in assets/. */
+  --accent: #007d9c;
+  --accent-soft: #e9f6fa;
 
   --hl-comment: #8a8a94;
   --hl-string: #1a7f5a;
   --hl-number: #b06a00;
   --hl-keyword: #a03aa8;
-  --hl-type: #0f6fbd;
+  --hl-type: #1d54c4;
   --hl-tag: #c0392b;
   --hl-attr: #b06a00;
-  --hl-brace: #6d4aff;
+  --hl-brace: #007d9c;
   --hl-punct: #92929c;
 
   --radius: 10px;
