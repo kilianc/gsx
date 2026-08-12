@@ -46,11 +46,11 @@ TOOLS_IMAGE := gsx-tools
 # thousands of small files through a macOS bind mount takes minutes, and the
 # host has no reason to read them.
 DOCKER_RUN := docker run --rm -u "$$(id -u):$$(id -g)" -e HOME=/tmp \
-	-v "$$(PWD)/vscode/gsx-vscode:/work" -w /work $(TOOLS_IMAGE)
+	-v "$(CURDIR)/vscode/gsx-vscode:/work" -w /work $(TOOLS_IMAGE)
 # The typecheck runs against the project prepared inside the image, with only
 # the sources mounted in, so node_modules is already resolved.
 DOCKER_CHECK := docker run --rm -u "$$(id -u):$$(id -g)" -e HOME=/tmp \
-	-v "$$(PWD)/vscode/gsx-vscode/src:/opt/ext/src:ro" -w /opt/ext $(TOOLS_IMAGE)
+	-v "$(CURDIR)/vscode/gsx-vscode/src:/opt/ext/src:ro" -w /opt/ext $(TOOLS_IMAGE)
 
 .PHONY: tools-image
 tools-image: ## Build the pinned Node toolchain image
