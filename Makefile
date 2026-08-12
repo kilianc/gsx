@@ -116,12 +116,32 @@ FPS ?= 20
 #
 # Frames land in the container's /tmp rather than the bind mount: there are
 # hundreds of them, they are read once, and the host has no use for them.
-DOCKER_DEMO := docker run --rm -u "$$(id -u):$$(id -g)" \
+DOCKER_DEMO := docker run --rm -u "$$(id -u):$$(id -g)" -e HOME=/tmp \
 	-v "$(CURDIR):/work" -w /work $(DEMO_IMAGE)
+REEL_DIR := .tmp/reel
 
 .PHONY: demo-image
 demo-image: ## Build the pinned ffmpeg + gifski image
 	docker build -q -f tools/demo.Dockerfile -t $(DEMO_IMAGE) .
+
+# The README demo is rendered, not recorded: cmd/demogen writes one HTML file
+# per frame from the real compiler's output, and Chromium screenshots each at
+# device scale 2. That is why it can be sharp — there is no capture to upscale —
+# and why it can be regenerated when the palette or the compiler changes.
+.PHONY: demo-reel
+demo-reel: demo-image ## Render assets/gsx-demo.gif from cmd/demogen
+	go run ./cmd/demogen -out $(REEL_DIR)
+	$(DOCKER_DEMO) sh -c 'set -e; \
+		rm -rf /tmp/shots; mkdir -p /tmp/shots; \
+		for f in $(REEL_DIR)/*.html; do \
+			n=$$(basename "$$f" .html); \
+			chromium --headless=old --no-sandbox --disable-gpu --hide-scrollbars \
+				--allow-file-access-from-files --force-device-scale-factor=2 \
+				--window-size=920,368 --virtual-time-budget=800 \
+				--screenshot=/tmp/shots/$$n.png "file:///work/$$f" >/dev/null 2>&1; \
+		done; \
+		gifski --fps $(FPS) --quality 100 --width $(WIDTH) -o "$(OUT)" /tmp/shots/*.png'
+	@ls -lh "$(OUT)"
 
 .PHONY: demo
 demo: demo-image ## Convert a screen recording into the README demo: make demo IN=recording.mov
