@@ -11,7 +11,8 @@
 #
 # Targets that use it:
 #
-#   make demo IN=recording.mov    convert a screen recording into assets/gsx-demo.gif
+#   make demo-reel                render assets/gsx-demo.gif from cmd/demogen
+#   make demo IN=recording.mov    convert a screen recording into a GIF
 
 # gifski ships no arm64 Linux binary, so it is built from source. The stage is
 # discarded and only the binary is copied forward, which keeps the Rust
@@ -25,8 +26,15 @@ FROM debian:bookworm-slim
 # Splitting it that way is the point of the image: ffmpeg's one global 256-colour
 # palette is what makes a screen recording look muddy, and gifski picks a palette
 # per frame instead.
+# Chromium screenshots the frames cmd/demogen writes, at twice their display
+# size — rendering the animation rather than capturing a screen is what makes it
+# sharp, and what lets it be regenerated after a visual change.
+#
+# The fonts matter: without them headless Chromium renders every glyph as a box.
+# DejaVu carries the monospace the code panes ask for, Liberation the rest.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates ffmpeg \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates ffmpeg chromium fonts-dejavu-core fonts-liberation \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=gifski /opt/gifski/bin/gifski /usr/local/bin/gifski
