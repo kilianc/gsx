@@ -137,7 +137,7 @@ demo-reel: demo-image ## Render assets/gsx-demo.gif from cmd/demogen
 			n=$$(basename "$$f" .html); \
 			chromium --headless=old --no-sandbox --disable-gpu --hide-scrollbars \
 				--allow-file-access-from-files --force-device-scale-factor=2 \
-				--window-size=920,368 --virtual-time-budget=800 \
+				--window-size=920,430 --virtual-time-budget=800 \
 				--screenshot=/tmp/shots/$$n.png "file:///work/$$f" >/dev/null 2>&1; \
 		done; \
 		gifski --fps $(FPS) --quality 100 --width $(WIDTH) -o "$(OUT)" /tmp/shots/*.png'

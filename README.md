@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/gsx-demo.gif" alt="Typing a .gsx file, the generated .gsx.go appearing beside it, and the page reloading" width="920" />
+  <img src="assets/gsx-demo.gif" alt="A .gsx file with an ordinary Go for loop building list items, the generated .gsx.go appearing beside it with the loop untouched, and the rendered page" width="920" />
 </p>
 
 ---
