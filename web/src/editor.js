@@ -56,16 +56,13 @@ function themeRules(c) {
   ];
 }
 
+// The documentation site is light whatever the operating system prefers, so the
+// editor embedded in it is too — the same palette as the stylesheet, so a
+// snippet keeps its colours when it moves between a page and the playground.
 const LIGHT = {
   comment: "8a8a94", string: "1a7f5a", number: "b06a00", keyword: "a03aa8",
   type: "0f6fbd", tag: "c0392b", attr: "b06a00", brace: "6d4aff",
   punct: "92929c", fg: "1a1a1c", bg: "ffffff",
-};
-
-const DARK = {
-  comment: "6f6f7b", string: "6ee7a8", number: "f0b866", keyword: "e08ce8",
-  type: "6cc2ff", tag: "ff8f80", attr: "f0b866", brace: "a78bfa",
-  punct: "75757f", fg: "ececf0", bg: "161619",
 };
 
 // Bracket highlighting paints brackets by nesting depth from its own palette,
@@ -81,7 +78,7 @@ function bracketColors(c) {
   return colors;
 }
 
-function defineThemes() {
+function defineTheme() {
   monaco.editor.defineTheme("gsx-light", {
     base: "vs",
     inherit: true,
@@ -92,20 +89,6 @@ function defineThemes() {
       ...bracketColors(LIGHT),
     },
   });
-  monaco.editor.defineTheme("gsx-dark", {
-    base: "vs-dark",
-    inherit: true,
-    rules: themeRules(DARK),
-    colors: {
-      "editor.background": "#" + DARK.bg,
-      "editor.foreground": "#" + DARK.fg,
-      ...bracketColors(DARK),
-    },
-  });
-}
-
-function preferredTheme() {
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "gsx-dark" : "gsx-light";
 }
 
 // Monaco's language configuration uses the same shape as the extension's JSON
@@ -186,14 +169,14 @@ const SEVERITY = {
 export async function create(container, opts = {}) {
   monaco.languages.register({ id: LANG, extensions: [".gsx"] });
   monaco.languages.setLanguageConfiguration(LANG, toMonacoConfig(gsxLanguageConfig));
-  defineThemes();
+  defineTheme();
 
   await initGrammars(opts.onigWasmUrl ?? ONIG_WASM_URL);
 
   const editor = monaco.editor.create(container, {
     value: opts.value ?? "",
     language: LANG,
-    theme: preferredTheme(),
+    theme: "gsx-light",
     automaticLayout: true,
     minimap: { enabled: false },
     scrollBeyondLastLine: false,
@@ -210,10 +193,6 @@ export async function create(container, opts = {}) {
     fontFamily:
       'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
   });
-
-  window
-    .matchMedia("(prefers-color-scheme: dark)")
-    .addEventListener("change", () => monaco.editor.setTheme(preferredTheme()));
 
   if (opts.onChange) {
     editor.onDidChangeModelContent(() => opts.onChange(editor.getValue()));
