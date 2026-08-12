@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"syscall"
@@ -63,7 +65,14 @@ func main() {
 	}
 	dirFlag := flag.String("dir", "", "if set, only generate for this directory (non-recursive). Useful with go:generate.")
 	checkFlag := flag.Bool("check", false, "do not write; exit non-zero if any generated file is out of date")
+	versionFlag := flag.Bool("version", false, "print the version of this binary and exit")
 	flag.Parse()
+
+	if *versionFlag {
+		bi, _ := debug.ReadBuildInfo()
+		fmt.Println(versionLine(bi))
+		return
+	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -105,6 +114,54 @@ func main() {
 	if err := run(paths, *checkFlag); err != nil {
 		fatal(err)
 	}
+}
+
+// versionLine renders `gsx -version`. It mirrors the shape of `go version` —
+// name, version, toolchain, platform — because this is the line that ends up in
+// a bug report.
+//
+// Nothing is stamped at build time: `go install …@v0.2.0` records the module
+// version in the binary itself, so a released binary knows what it is without
+// any -ldflags. A nil bi means the build info was stripped.
+func versionLine(bi *debug.BuildInfo) string {
+	version, goVersion := "(unknown)", runtime.Version()
+	if bi != nil {
+		if bi.GoVersion != "" {
+			goVersion = bi.GoVersion
+		}
+		switch v := bi.Main.Version; v {
+		case "", "(devel)":
+			version = develVersion(bi)
+		default:
+			version = v
+		}
+	}
+	return fmt.Sprintf("gsx %s %s %s/%s", version, goVersion, runtime.GOOS, runtime.GOARCH)
+}
+
+// develVersion names a binary built from a checkout by the commit it came from,
+// which is all the go command knows when there is no module version to record.
+func develVersion(bi *debug.BuildInfo) string {
+	var revision string
+	var dirty bool
+	for _, s := range bi.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			revision = s.Value
+		case "vcs.modified":
+			dirty = s.Value == "true"
+		}
+	}
+	if revision == "" {
+		return "(devel)"
+	}
+	if len(revision) > 12 {
+		revision = revision[:12]
+	}
+	if dirty {
+		return fmt.Sprintf("(devel %s dirty)", revision)
+	}
+	return fmt.Sprintf("(devel %s)", revision)
 }
 
 // run compiles every path. In check mode it writes nothing and instead reports

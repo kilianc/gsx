@@ -339,8 +339,18 @@ func EditorsPage() Page {
 					Code("PATH"),
 					Text("."),
 				),
-				P(Text("Check it:")),
-				Shell("gsx -h"),
+				P(Text("Check it, and see which build you have:")),
+				Shell(
+					`gsx -h
+gsx -version`,
+				),
+				P(
+					Text("A binary installed at a tag reports that tag — "),
+					Code("gsx v0.2.0 go1.22.5 darwin/arm64"),
+					Text(
+						" — so it is worth pasting into a bug report. One built from a checkout reports the commit instead.",
+					),
+				),
 				html.H3(Text("2. The extension")),
 				P(
 					Text(

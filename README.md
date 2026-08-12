@@ -182,7 +182,7 @@ go install github.com/kilianc/gsx/cmd/gsx@latest
 ```
 
 The binary lands in `$(go env GOPATH)/bin`, which must be on your `PATH`. Check it with
-`gsx -h`.
+`gsx -h`, and `gsx -version` to see which build you have.
 
 **The editor extension** is not on the Marketplace yet, so build it from the repository.
 This needs [Docker](https://www.docker.com) — the Node toolchain is pinned in a container,
@@ -210,7 +210,12 @@ gsx fmt -w ./...   # format sources
 gsx fmt -l ./...   # CI: fail if any source is unformatted
 gsx dev            # watch, rebuild, restart, reload the browser
 gsx lsp            # language server (started by the editor extension)
+gsx -version       # which build this is — paste this into a bug report
 ```
+
+`gsx -version` reads the version the `go` command recorded in the binary, so one installed
+with `go install …@v0.2.0` reports `gsx v0.2.0 go1.22.5 darwin/arm64`, and one built from a
+checkout reports the commit it came from.
 
 ## Live reload
 
