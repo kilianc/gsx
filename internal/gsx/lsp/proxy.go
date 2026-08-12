@@ -455,6 +455,39 @@ func formattingResponse(id any, d *docState) []byte {
 	return b
 }
 
+// completionResponse answers a completion request with an incomplete list, so
+// the editor re-asks as the user keeps typing.
+func completionResponse(id any, items []completionItem) []byte {
+	if items == nil {
+		items = []completionItem{}
+	}
+	b, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"result": map[string]any{
+			"isIncomplete": true,
+			"items":        items,
+		},
+	})
+	return b
+}
+
+// offsetOf converts a zero-based line/character position to a byte offset.
+func offsetOf(s string, line, char int) int {
+	off := 0
+	for l := 0; l < line; l++ {
+		i := strings.IndexByte(s[off:], '\n')
+		if i < 0 {
+			return len(s)
+		}
+		off += i + 1
+	}
+	if off+char > len(s) {
+		return len(s)
+	}
+	return off + char
+}
+
 func makeClearDiagnosticNotification(uri string) []byte {
 	diag := map[string]any{
 		"jsonrpc": "2.0",
@@ -633,7 +666,46 @@ func (s *state) rewriteClientToGopls(raw []byte) ([]byte, error) {
 		// Swallow the request: gopls must not see it.
 		return nil, nil
 
-	case "textDocument/completion", "textDocument/definition", "textDocument/hover", "textDocument/signatureHelp":
+	case "textDocument/completion":
+		// Inside markup, GSX knows the answer and gopls does not: the generated
+		// Go view has no notion of a tag name or an attribute.
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+			Position struct {
+				Line      int `json:"line"`
+				Character int `json:"character"`
+			} `json:"position"`
+		}
+		if err := json.Unmarshal(*m.Params, &p); err != nil {
+			return nil, err
+		}
+		if !isGSXURI(p.TextDocument.URI) {
+			return raw, nil
+		}
+		d := s.getDoc(p.TextDocument.URI)
+		if d == nil {
+			return raw, nil
+		}
+
+		off := offsetOf(d.gsxText, p.Position.Line, p.Position.Character)
+		if ctx := completionAt(d.gsxText, off); ctx.kind != completeNone {
+			s.setPendingResponse(completionResponse(m.ID, completionsFor(ctx, d.gsxText)))
+			return nil, nil
+		}
+		// Ordinary Go: let gopls answer, at the mapped position.
+		gl, gc, ok := mapPositionSrcToGo(d, p.Position.Line, p.Position.Character)
+		if !ok {
+			return raw, nil
+		}
+		p.TextDocument.URI = d.goURI
+		p.Position.Line, p.Position.Character = gl, gc
+		b, _ := json.Marshal(p)
+		m.Params = (*json.RawMessage)(&b)
+		return json.Marshal(m)
+
+	case "textDocument/definition", "textDocument/hover", "textDocument/signatureHelp":
 		// Rewrite position-bearing requests.
 		var p struct {
 			TextDocument struct {
@@ -823,6 +895,15 @@ func stripCapabilities(resp map[string]any) map[string]any {
 	if _, ok := caps["semanticTokensProvider"]; ok {
 		delete(caps, "semanticTokensProvider")
 		removed["semanticTokensProvider"] = true
+	}
+
+	// GSX answers these itself, so they are advertised regardless of what gopls
+	// reported for the Go view.
+	caps["documentFormattingProvider"] = true
+	caps["completionProvider"] = map[string]any{
+		// `<` and `/` open tag completion, a space inside a start tag opens
+		// attribute completion.
+		"triggerCharacters": []string{"<", "/", " ", "."},
 	}
 
 	resp["capabilities"] = caps
