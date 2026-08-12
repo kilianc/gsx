@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 238 80" width="238" height="80" role="img" aria-label="gsx">
   <title>gsx</title>
   <!-- Dark-background variant of assets/gsx-logo.svg. Same geometry, lighter ink. -->
-  <g fill="none" stroke="#a78bfa" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+  <g fill="none" stroke="#00add8" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
     <path d="M32 12 L22 12 L22 32 L10 40 L22 48 L22 68 L32 68"/>
     <path d="M32 12 L22 12 L22 32 L10 40 L22 48 L22 68 L32 68" transform="translate(238,0) scale(-1,1)"/>
   </g>

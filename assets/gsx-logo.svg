@@ -8,7 +8,7 @@
     Geometry: 80-unit box, 8-unit monoline strokes, x-height 28 on a baseline
     at y=54. Letters are drawn as paths so the file needs no font.
   -->
-  <g fill="none" stroke="#6d4aff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+  <g fill="none" stroke="#007d9c" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
     <path d="M32 12 L22 12 L22 32 L10 40 L22 48 L22 68 L32 68"/>
     <path d="M32 12 L22 12 L22 32 L10 40 L22 48 L22 68 L32 68" transform="translate(238,0) scale(-1,1)"/>
   </g>

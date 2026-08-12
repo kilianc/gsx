@@ -61,7 +61,7 @@ function themeRules(c) {
 // snippet keeps its colours when it moves between a page and the playground.
 const LIGHT = {
   comment: "8a8a94", string: "1a7f5a", number: "b06a00", keyword: "a03aa8",
-  type: "0f6fbd", tag: "c0392b", attr: "b06a00", brace: "6d4aff",
+  type: "1d54c4", tag: "c0392b", attr: "b06a00", brace: "007d9c",
   punct: "92929c", fg: "1a1a1c", bg: "ffffff",
 };
 
