@@ -1,6 +1,9 @@
 package gomponents
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 //go:generate go run ./gen
 
@@ -39,6 +42,17 @@ var jsxAttrAliases = map[string]string{
 	"srcset":              "srcset",
 }
 
+// jsxAttrSpellings are the camel-cased names to offer in completion. The alias
+// map above is keyed lower-case for case-insensitive lookup, which is the wrong
+// spelling to suggest to someone typing.
+var jsxAttrSpellings = []string{
+	"className", "htmlFor", "tabIndex", "readOnly", "maxLength", "minLength",
+	"colSpan", "rowSpan", "autoComplete", "autoFocus", "autoPlay", "crossOrigin",
+	"dateTime", "encType", "formAction", "formEncType", "formMethod",
+	"formNoValidate", "formTarget", "noValidate", "playsInline", "popoverTarget",
+	"popoverTargetAction", "referrerPolicy", "srcSet",
+}
+
 // canonicalAttr resolves an attribute name as written to its HTML name.
 //
 // Lookup is case-insensitive because HTML attribute names are, which also makes
@@ -67,4 +81,43 @@ func htmlStringAttrFunc(key string) string {
 // htmlBoolAttrFunc returns the constructor for a valueless attribute.
 func htmlBoolAttrFunc(key string) string {
 	return htmlBoolAttrs[canonicalAttr(key)]
+}
+
+// ElementNames returns every HTML tag GSX maps to a typed constructor, sorted.
+//
+// Exported for editor completion: the language server offers these after `<`.
+func ElementNames() []string { return sortedKeys(htmlElements) }
+
+// AttributeNames returns every attribute name GSX knows, sorted, including the
+// JSX spellings so completion can offer `className` alongside `class`.
+func AttributeNames() []string {
+	seen := map[string]bool{}
+	for k := range htmlStringAttrs {
+		seen[k] = true
+	}
+	for k := range htmlBoolAttrs {
+		seen[k] = true
+	}
+	for _, jsx := range jsxAttrSpellings {
+		seen[jsx] = true
+	}
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// IsBooleanAttribute reports whether an attribute takes no value, so completion
+// can insert `disabled` rather than `disabled=""`.
+func IsBooleanAttribute(name string) bool { return htmlBoolAttrs[canonicalAttr(name)] != "" }
+
+func sortedKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

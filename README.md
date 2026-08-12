@@ -153,8 +153,12 @@ Full details in the [language reference](https://kilianc.github.io/gsx/language.
 ## Editors
 
 `gsx lsp` proxies `gopls`, compiling the buffer to a virtual Go view and mapping positions
-back, so `.gsx` files get diagnostics, hover, go-to-definition and completion. GSX's own
-parse errors are reported on the offending character.
+back, so `.gsx` files get diagnostics, hover and go-to-definition. GSX's own parse errors are
+reported on the offending character.
+
+Requests gopls cannot answer — it has no notion of a tag — GSX answers itself: tag completion
+after `<` (your components first, then HTML elements), attribute completion inside a start
+tag, closing tags after `</`, and formatting.
 
 The VS Code / Cursor extension in [`vscode/gsx-vscode/`](vscode/gsx-vscode) adds the editing
 behaviour a JSX-like language needs:

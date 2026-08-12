@@ -170,11 +170,48 @@ func EditorsPage() Page {
 					html.Li(Text("Diagnostics, including type errors from the generated code")),
 					html.Li(Text("Hover")),
 					html.Li(Text("Go to definition")),
-					html.Li(Text("Completion")),
+					html.Li(Text("Completion for Go expressions")),
+				),
+				P(
+					Text(
+						"Some requests GSX answers itself, because gopls cannot: it has no notion of a tag name, and the generated Go view is not what you are editing.",
+					),
+				),
+				html.Ul(
+					html.Li(
+						html.Strong(Text("Tag completion")),
+						Text(" after "),
+						html.Code(Text("<")),
+						Text(" — components defined in the file first, then HTML elements"),
+					),
+					html.Li(
+						html.Strong(Text("Attribute completion")),
+						Text(
+							" inside a start tag, including the JSX spellings, with the caret landing between the quotes",
+						),
+					),
+					html.Li(
+						html.Strong(Text("Closing tags")),
+						Text(" after "),
+						html.Code(Text("</")),
+						Text(", naming whichever tag is still open"),
+					),
+					html.Li(html.Strong(Text("Formatting")), Text(", so format-on-save works")),
 				),
 				P(
 					Text(
 						"GSX's own parse errors are reported directly, positioned on the offending character.",
+					),
+				),
+				Note(
+					P(
+						Text(
+							"Completion works on a buffer that does not parse — which is the normal state while typing ",
+						),
+						Code("<Car"),
+						Text(
+							". It scans rather than parses for exactly that reason: parsing would mean offering nothing at the moment you are asking.",
+						),
 					),
 				),
 			),
