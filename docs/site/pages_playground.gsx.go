@@ -71,6 +71,8 @@ func PlaygroundPage() Page {
 		Title:    "Playground",
 		Subtitle: "Write GSX on the left. The Go it compiles to, and the HTML that Go renders, appear on the right.",
 		Wide:     true,
+		Styles:   []string{"./vendor/editor.css"},
+		Modules:  []string{"./vendor/editor.js"},
 		Scripts:  []string{"./playground.js"},
 		Body: Group{
 			html.Div(
@@ -86,6 +88,7 @@ func PlaygroundPage() Page {
 							Text("Loading compiler…"),
 						),
 					),
+					html.Div(html.ID("pg-mount"), html.Class("pg-mount")),
 					El(
 						"textarea",
 						Attr("id", "pg-editor"),
@@ -176,6 +179,20 @@ func PlaygroundPage() Page {
 					html.Code(Text("net")),
 					Text(
 						" — those packages are simply absent, which is what makes running a stranger's snippet safe.",
+					),
+				),
+				html.P(
+					html.Class("muted"),
+					Text("The editor is Monaco using the same TextMate grammar as the"),
+					Text(" "),
+					html.A(
+						html.Href(
+							"https://marketplace.visualstudio.com/items?itemName=kilianc.gsx-vscode",
+						),
+						Text("VS Code extension"),
+					),
+					Text(
+						", so tags and Go highlight here exactly as they do there. Type checking, hover and go-to-definition are not available: those come from gopls, which needs a real toolchain and a filesystem. Install the extension for those.",
 					),
 				),
 			),

@@ -261,3 +261,49 @@ func Page() Node {
 		t.Errorf("HTML = %q, want %q", res.HTML, want)
 	}
 }
+
+// A parse error carries an offset into the source the reader typed, so it can
+// be underlined exactly. Anything positioned in generated code cannot.
+func TestDiagnosticsPlaceParseErrors(t *testing.T) {
+	_, err := playground.Run(context.Background(), `package main
+
+func Page() Node {
+	return <div class="card">hi</span>
+}
+`)
+	var perr *playground.Error
+	if !errors.As(err, &perr) {
+		t.Fatalf("error = %T, want *playground.Error", err)
+	}
+	if len(perr.Diagnostics) != 1 {
+		t.Fatalf("Diagnostics = %v, want 1", perr.Diagnostics)
+	}
+	d := perr.Diagnostics[0]
+	if d.Line != 4 {
+		t.Errorf("Line = %d, want 4", d.Line)
+	}
+	// The caret belongs on the offending closing tag, not the start of the
+	// line: tab, "return ", then <div class="card">hi puts </span> at column 29.
+	if d.Col != 29 {
+		t.Errorf("Col = %d, want 29 (the `<` of </span>)", d.Col)
+	}
+	if !strings.Contains(d.Message, "mismatched closing tag") {
+		t.Errorf("Message = %q", d.Message)
+	}
+}
+
+func TestNoDiagnosticsForGeneratedPositions(t *testing.T) {
+	// An undefined identifier is reported by the interpreter against generated
+	// Go, so there is no honest position to underline in the reader's source.
+	_, err := playground.Run(context.Background(), `package main
+
+func Page() Node { return <p>{nope}</p> }
+`)
+	var perr *playground.Error
+	if !errors.As(err, &perr) {
+		t.Fatalf("error = %T", err)
+	}
+	if len(perr.Diagnostics) != 0 {
+		t.Errorf("Diagnostics = %v, want none", perr.Diagnostics)
+	}
+}

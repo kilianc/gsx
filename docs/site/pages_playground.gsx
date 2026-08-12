@@ -61,6 +61,8 @@ func PlaygroundPage() Page {
 		Title:    "Playground",
 		Subtitle: "Write GSX on the left. The Go it compiles to, and the HTML that Go renders, appear on the right.",
 		Wide:     true,
+		Styles:   []string{"./vendor/editor.css"},
+		Modules:  []string{"./vendor/editor.js"},
 		Scripts:  []string{"./playground.js"},
 		Body:     (
 			<>
@@ -70,6 +72,10 @@ func PlaygroundPage() Page {
 							<span class="pg-label">page.gsx</span>
 							<span id="pg-status" class="pg-status is-busy">Loading compiler…</span>
 						</div>
+						{/* Monaco mounts here. The textarea is the pre-editor value
+						   holder and the fallback if the bundle fails to load, so the
+						   page still works without it. */}
+						<div id="pg-mount" class="pg-mount"></div>
 						{El("textarea", Attr("id", "pg-editor"), Attr("class", "pg-editor"),
 							Attr("spellcheck", "false"), Attr("autocomplete", "off"),
 							Attr("autocapitalize", "off"), Attr("aria-label", "GSX source"),
@@ -110,6 +116,14 @@ func PlaygroundPage() Page {
 						{" "}<code>strings</code>, <code>strconv</code> and <code>sort</code>. It cannot
 						see <code>os</code> or <code>net</code> — those packages are simply absent, which
 						is what makes running a stranger's snippet safe.
+					</p>
+					<p class="muted">
+						The editor is Monaco using the same TextMate grammar as the
+						{" "}<a href="https://marketplace.visualstudio.com/items?itemName=kilianc.gsx-vscode">VS Code extension</a>,
+						so tags and Go highlight here exactly as they do there. Type checking,
+						hover and go-to-definition are not available: those come from gopls,
+						which needs a real toolchain and a filesystem. Install the extension for
+						those.
 					</p>
 				</div>
 			</>

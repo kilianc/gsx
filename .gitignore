@@ -10,7 +10,8 @@
 vscode/gsx-vscode/node_modules/
 vscode/gsx-vscode/dist/
 
-# Playground editor bundle sources (see the editor branch); never commit deps.
+# Playground editor bundle sources. The built output in docs/static/vendor is
+# checked in on purpose, so building the site needs only Go.
 web/node_modules/
 vscode/gsx-vscode/*.vsix
 
