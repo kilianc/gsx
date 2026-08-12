@@ -219,3 +219,45 @@ func Page() Node { return <p>ok</p> }
 		t.Errorf("HTML = %q", res.HTML)
 	}
 }
+
+// gomponents.Map is generic, so `yaegi extract` skips it and the symbol tables
+// cannot supply it. The prelude fills that hole.
+func TestGomponentsMapIsAvailable(t *testing.T) {
+	res := run(t, `package main
+
+func Page() Node {
+	return <ul>{Map([]string{"a", "b"}, func(s string) Node { return <li>{s}</li> })}</ul>
+}
+`)
+	const want = "<ul><li>a</li><li>b</li></ul>"
+	if res.HTML != want {
+		t.Errorf("HTML = %q, want %q", res.HTML, want)
+	}
+}
+
+// The prelude must not collide with a reader who writes their own Map.
+func TestOwnMapWins(t *testing.T) {
+	res := run(t, `package main
+
+func Map(n int) Node { return <b>{"mine"}</b> }
+
+func Page() Node { return <p>{Map(1)}</p> }
+`)
+	const want = "<p><b>mine</b></p>"
+	if res.HTML != want {
+		t.Errorf("HTML = %q, want %q", res.HTML, want)
+	}
+}
+
+func TestMapInNonMainPackage(t *testing.T) {
+	res := run(t, `package ui
+
+func Page() Node {
+	return <ul>{Map([]int{1, 2}, func(i int) Node { return <li>{"x"}</li> })}</ul>
+}
+`)
+	const want = "<ul><li>x</li><li>x</li></ul>"
+	if res.HTML != want {
+		t.Errorf("HTML = %q, want %q", res.HTML, want)
+	}
+}

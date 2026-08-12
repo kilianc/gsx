@@ -62,7 +62,7 @@ func PlaygroundPage() Page {
 		Subtitle: "Write GSX on the left. The Go it compiles to, and the HTML that Go renders, appear on the right.",
 		Wide:     true,
 		Scripts:  []string{"./playground.js"},
-		Body: (
+		Body:     (
 			<>
 				<div class="pg">
 					<div class="pg-col">

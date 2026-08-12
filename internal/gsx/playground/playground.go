@@ -17,6 +17,7 @@ package playground
 import (
 	"context"
 	"fmt"
+	goast "go/ast"
 	goparser "go/parser"
 	gotoken "go/token"
 	"strings"
@@ -28,6 +29,26 @@ import (
 
 	"github.com/traefik/yaegi/interp"
 )
+
+// prelude fills the one hole in the extracted symbol tables.
+//
+// `yaegi extract` skips generic functions, so gomponents.Map — its only one —
+// is missing from the bindings and a reader calling it would be told it is
+// undefined. The interpreter does handle a generic *definition*, so declaring
+// it in the reader's own package restores it with the same signature and
+// behaviour as the real thing.
+//
+// It is evaluated as a separate unit before the reader's code, which keeps
+// their source untouched and their error positions honest.
+const prelude = `
+func Map[T any](ts []T, cb func(T) Node) Group {
+	nodes := make([]Node, 0, len(ts))
+	for _, t := range ts {
+		nodes = append(nodes, cb(t))
+	}
+	return nodes
+}
+`
 
 // EntryPoint is the function the playground renders.
 //
@@ -95,11 +116,22 @@ func Run(ctx context.Context, src string) (Result, error) {
 		return res, &Error{Stage: StageInterpret, Err: err}
 	}
 
+	pkg := packageName(goSrc)
+
+	// Skipped when the reader declares their own Map, which would otherwise
+	// collide with the prelude's.
+	if !declaresFunc(goSrc, "Map") {
+		src := "package " + orMain(pkg) + "\n\nimport . \"maragu.dev/gomponents\"\n" + prelude
+		if _, err := i.EvalWithContext(ctx, src); err != nil {
+			return res, &Error{Stage: StageInterpret, Err: err}
+		}
+	}
+
 	if _, err := i.EvalWithContext(ctx, goSrc); err != nil {
 		return res, &Error{Stage: StageInterpret, Err: err}
 	}
 
-	node, err := call(ctx, i, goSrc)
+	node, err := call(ctx, i, pkg)
 	if err != nil {
 		return res, err
 	}
@@ -117,7 +149,7 @@ func Run(ctx context.Context, src string) (Result, error) {
 // The call is made inside the interpreter rather than through a Go function
 // value so that it runs under ctx: reflect-calling it from here would escape
 // cancellation entirely.
-func call(ctx context.Context, i *interp.Interpreter, goSrc string) (n gomponents.Node, err error) {
+func call(ctx context.Context, i *interp.Interpreter, pkg string) (n gomponents.Node, err error) {
 	// Interpreted code is the reader's, so it can panic on its own — an index
 	// out of range should surface as a message, not take the process with it.
 	defer func() {
@@ -127,7 +159,7 @@ func call(ctx context.Context, i *interp.Interpreter, goSrc string) (n gomponent
 	}()
 
 	expr := EntryPoint + "()"
-	if pkg := packageName(goSrc); pkg != "" && pkg != "main" {
+	if pkg != "" && pkg != "main" {
 		// A non-main package is still registered, just under its own name.
 		expr = pkg + "." + expr
 	}
@@ -158,4 +190,26 @@ func packageName(goSrc string) string {
 		return ""
 	}
 	return f.Name.Name
+}
+
+func orMain(pkg string) string {
+	if pkg == "" {
+		return "main"
+	}
+	return pkg
+}
+
+// declaresFunc reports whether goSrc declares a top-level function called name.
+func declaresFunc(goSrc, name string) bool {
+	f, err := goparser.ParseFile(gotoken.NewFileSet(), "page.go", goSrc, goparser.SkipObjectResolution)
+	if err != nil {
+		return false
+	}
+	for _, decl := range f.Decls {
+		fn, ok := decl.(*goast.FuncDecl)
+		if ok && fn.Recv == nil && fn.Name != nil && fn.Name.Name == name {
+			return true
+		}
+	}
+	return false
 }

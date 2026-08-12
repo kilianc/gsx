@@ -6,22 +6,3 @@ import "os"
 func WriteGeneratedFile(outPath string, src []byte) error {
 	return os.WriteFile(outPath, src, 0o644)
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

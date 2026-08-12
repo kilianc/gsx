@@ -9,6 +9,9 @@
 # Editor extension build artifacts
 vscode/gsx-vscode/node_modules/
 vscode/gsx-vscode/dist/
+
+# Playground editor bundle sources (see the editor branch); never commit deps.
+web/node_modules/
 vscode/gsx-vscode/*.vsix
 
 # Local scratch
