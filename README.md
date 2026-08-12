@@ -3,8 +3,10 @@
 </p>
 
 <p align="center">
-  <strong>Write HTML inline in ordinary Go functions.</strong><br />
-  No template language, no runtime — just Go you can read.
+  <strong>JSX for Go.</strong><br />
+  Write markup inline in ordinary Go functions — with real loops, conditionals and
+  calls in the middle of it.<br />
+  No template language, no runtime.
 </p>
 
 <p align="center">
@@ -21,34 +23,26 @@
 
 ---
 
-## Start simple
+## If you know JSX, you already know GSX
 
-A `.gsx` file is a normal Go file. The only new thing is that a tag is an expression.
+A `.gsx` file is a normal Go file. The only new thing is the one JSX added to JavaScript:
+**a tag is an expression.** Here is the same component in both languages.
 
-```go
-package ui
-
-func Hello() Node {
+```jsx
+function ProfileCard({ name, tags, admin }) {
   return (
-    <main class="page">
-      <h1>Hello</h1>
-      <p>Welcome to GSX.</p>
-    </main>
-  )
+    <section className="card">
+      <header>
+        <h2>{name.trim()}</h2>
+        {admin && <span className="pill">admin</span>}
+      </header>
+      <ul className="tags">
+        {tags.map((t) => <li className="tag">{t}</li>)}
+      </ul>
+    </section>
+  );
 }
 ```
-
-```html
-<main class="page"><h1>Hello</h1><p>Welcome to GSX.</p></main>
-```
-
-## Then mix in Go
-
-Because markup is an expression, everything you already do in Go still works. Loops build
-lists. Conditionals pick branches. Values come from variables and function calls.
-
-There is no template language between you and the page — no `{{range}}`, no partials to
-register, no separate file to keep in sync.
 
 ```go
 func ProfileCard(name string, tags []string, admin bool) Node {
@@ -69,35 +63,112 @@ func ProfileCard(name string, tags []string, admin bool) Node {
 }
 ```
 
-Props are function parameters, so a typo is a compile error and your editor completes them
-from the signature.
+Same shape, same instincts. Tags, fragments, `{expr}` splices, `className`, spread
+attributes and `{/* comments */}` all carry over. What changes is the language *around* the
+tags: `map` becomes a `for` loop, `&&` becomes `If`, and props are typed function
+parameters instead of an untyped object.
 
-## And you can read the output
+## Real Go, right in the middle of the markup
 
-GSX runs ahead of time and writes a `.gsx.go` file next to each source file. You check it
-in and review it like any other code.
+This is the whole point. Because a tag is an expression, markup sits inside ordinary Go
+control flow, and Go control flow sits inside markup. Nothing is a special template
+directive — it is the language you already write.
+
+- `for` and `range` build lists into a `[]Node`.
+- `if`, `switch` and early `return` pick between branches of markup.
+- Function and method calls fill in values, and any function returning `Node` is a component.
+- Variables hold markup, so you can build a piece of a page before you place it.
 
 ```go
-func ProfileCard(name string, tags []string, admin bool) Node {
-	var lis []Node
-	for _, t := range tags {
-		lis = append(lis, html.Li(html.Class("tag"), Text(t)))
-	}
+func InvoiceTable(invoices []Invoice) Node {
+  if len(invoices) == 0 {
+    return <p class="empty">No invoices yet.</p>
+  }
 
-	return html.Section(
-		html.Class("card"),
-		html.Header(
-			html.H2(Text(strings.TrimSpace(name))),
-			If(admin, html.Span(html.Class("pill"), Text("admin"))),
-		),
-		html.Ul(html.Class("tags"), Group(lis)),
-	)
+  var rows []Node
+  for _, inv := range invoices {
+    rows = append(rows, (
+      <tr>
+        <td>{inv.Number}</td>
+        <td>{inv.Customer.Name}</td>
+        <td class="num">{money(inv.Total)}</td>
+        <td>{StatusPill(inv.Status)}</td>
+      </tr>
+    ))
+  }
+
+  return (
+    <table class="invoices">
+      <tbody>{rows}</tbody>
+    </table>
+  )
+}
+
+func StatusPill(s Status) Node {
+  switch s {
+  case Paid:
+    return <span class="pill pill-ok">paid</span>
+  case Overdue:
+    return <span class="pill pill-bad">overdue</span>
+  }
+  return <span class="pill">draft</span>
 }
 ```
 
-That is the whole trick. When something renders wrong, you open the generated file and read
-exactly what will run — no reflection, no template parser, no interpreter at run time.
-Rendering is [`maragu.dev/gomponents`](https://pkg.go.dev/maragu.dev/gomponents).
+There is no template language between you and the page — no `{{range}}`, no partials to
+register, no separate file to keep in sync. The empty-state check is a plain `if` and the
+status pill is a plain `switch`.
+
+Props are function parameters, so a typo is a compile error, your editor completes them
+from the signature, and a rename refactors every call site.
+
+## Coming from JSX
+
+| JSX | GSX |
+|---|---|
+| `<div>…</div>`, `<>…</>`, `{expr}` | identical |
+| `className`, `htmlFor`, `maxLength` | identical (or the HTML spelling, your choice) |
+| `{items.map(i => <li>{i}</li>)}` | a `for` loop appending to `[]Node`, spliced |
+| `{cond && <p/>}` | `{If(cond, <p/>)}`, or plain Go `if` |
+| `{...props}` | `{...attrs}`, where `attrs` is a `[]Node` |
+| a props object | typed function parameters |
+| `children` | a trailing `...Node` parameter |
+| `<Card/>` resolved by scope | uppercase tags are function calls, resolved lexically |
+| hooks, state, a virtual DOM | none of it — GSX only renders |
+
+GSX is the JSX half of the deal: the syntax, on the server, ahead of time. For
+interactivity, reach for whatever you would otherwise pair with server-rendered HTML.
+
+## No runtime — the generated Go is the artifact
+
+GSX runs ahead of time and writes a `.gsx.go` file next to each source file. You check it
+in and review it like any other code. `InvoiceTable` above becomes:
+
+```go
+func InvoiceTable(invoices []Invoice) Node {
+	if len(invoices) == 0 {
+		return html.P(html.Class("empty"), Text("No invoices yet."))
+	}
+
+	var rows []Node
+	for _, inv := range invoices {
+		rows = append(rows, html.Tr(
+			html.Td(Text(inv.Number)),
+			html.Td(Text(inv.Customer.Name)),
+			html.Td(html.Class("num"), Text(money(inv.Total))),
+			html.Td(StatusPill(inv.Status)),
+		))
+	}
+
+	return html.Table(html.Class("invoices"), html.TBody(Group(rows)))
+}
+```
+
+The same function, with the tags spelled out. When something renders wrong you open that
+file and read exactly what will run — no reflection, no template parser, no interpreter, no
+diffing. At run time it is ordinary
+[`maragu.dev/gomponents`](https://pkg.go.dev/maragu.dev/gomponents) calls you can step
+through in a debugger, and nothing GSX-specific ships in your binary.
 
 ## Install
 
@@ -156,6 +227,8 @@ client. Build failures appear as a full-page overlay with the same `file:line:co
 and source snippet you get on the terminal.
 
 ## What the syntax covers
+
+The JSX surface, with Go inside the braces:
 
 | | |
 |---|---|

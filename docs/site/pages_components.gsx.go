@@ -13,7 +13,7 @@ func ComponentsPage() Page {
 	return Page{
 		Slug:     "components",
 		Title:    "Components",
-		Subtitle: "Components are Go functions. Props are parameters. There is no component runtime.",
+		Subtitle: "Components are Go functions and props are typed parameters — the JSX shape, with none of the runtime: no hooks, no state, no virtual DOM.",
 		Body: Group{
 			Section(
 				"basics",

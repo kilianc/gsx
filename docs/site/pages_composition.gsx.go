@@ -31,6 +31,16 @@ func CompositionPage() Page {
 						"pass what varies as parameters, return early, keep the signature honest. There is no component lifecycle, no registration step, no base class.",
 					),
 				),
+				P(
+					Text(
+						"If you are coming from React, this is the part to unlearn rather than translate. A component here is closer to a ",
+					),
+					Em("render function"),
+					Text(" than to a React component: it takes data and returns markup, once. "),
+					Text(
+						"There is no state to hold, nothing to memoize, and no re-render to optimise — so the only design question left is the ordinary Go one, where to draw the function boundary.",
+					),
+				),
 				Note(
 					P(
 						Text(
