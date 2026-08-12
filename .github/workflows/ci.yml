@@ -19,6 +19,11 @@ jobs:
       - name: Build
         run: go build ./...
 
+      - name: Format
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "not gofmt'd:"; echo "$out"; exit 1; fi
+
       - name: Vet
         run: go vet ./...
 

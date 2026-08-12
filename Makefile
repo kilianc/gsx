@@ -10,6 +10,8 @@ fmt: ## Format every *.gsx source
 check: ## Fail if any checked-in generated file is out of date, or any source is unformatted
 	go run ./cmd/gsx -check ./...
 	go run ./cmd/gsx fmt -l ./...
+	@out=$$(gofmt -l .); \
+	if [ -n "$$out" ]; then echo "not gofmt'd:"; echo "$$out"; exit 1; fi
 	go generate ./...
 	git diff --exit-code -- '*_tables.go' 'internal/gsx/playground/symbols'
 
@@ -21,6 +23,15 @@ test: ## Run the full test suite
 golden: gen ## Regenerate every golden file, then run the tests
 	go test ./e2e -update
 	go test ./...
+
+.PHONY: fmt
+fmt: ## Format every package
+	gofmt -w .
+
+.PHONY: fmt-check
+fmt-check: ## Fail if anything is unformatted
+	@out=$$(gofmt -l .); \
+	if [ -n "$$out" ]; then echo "not gofmt'd:"; echo "$$out"; exit 1; fi
 
 .PHONY: vet
 vet:

@@ -153,8 +153,8 @@ func buildRewriteMappers(src string, placeholders []placeholder) (srcToRewritten
 			tgtStart: p.tgtStart,
 			tgtEnd:   p.tgtEnd,
 			// Positions inside tags/placeholder regions aren't meaningfully mappable.
-			mapTgtToSrcInside: true,  // map to tag start for diagnostics
-			mapSrcToTgtInside: true,  // map tag interior to placeholder start for requests
+			mapTgtToSrcInside: true, // map to tag start for diagnostics
+			mapSrcToTgtInside: true, // map tag interior to placeholder start for requests
 		})
 	}
 	sort.Slice(edits, func(i, j int) bool { return edits[i].srcStart < edits[j].srcStart })
@@ -361,7 +361,8 @@ type expansionEditResult struct {
 }
 
 // applyInlineExpansions replaces each placeholder call with a single-line inline func literal call:
-//   func() Node { return <loweredExpr> }()
+//
+//	func() Node { return <loweredExpr> }()
 //
 // It records each replacement as an edit.
 func applyInlineExpansions(in string, placeholders []placeholder, loweredExprs map[string]string, mapTgtToSrcInside bool, mapSrcToTgtInside bool) expansionEditResult {
