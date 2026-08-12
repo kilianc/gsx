@@ -5,7 +5,7 @@ func CompositionPage() Page {
 		Slug:     "composition",
 		Title:    "Reusable components",
 		Subtitle: "How to factor markup into components that compose — and how to organize them once you have more than a handful.",
-		Body: (
+		Body:     (
 			<>
 				{Section("mental-model", "The mental model",
 					P(Text("A component is a function that returns a "), Code("Node"), Text(". That is the entire abstraction.")),

@@ -5,7 +5,7 @@ func LanguagePage() Page {
 		Slug:     "language",
 		Title:    "Language reference",
 		Subtitle: "Everything GSX adds to Go, and exactly what each form compiles to.",
-		Body: (
+		Body:     (
 			<>
 				{Section("tags", "Tag expressions",
 					P(Text("A tag is an expression. It can go anywhere a Go expression can — returned, assigned, appended to a slice, passed as an argument.")),

@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/kilianc/gsx/internal/gsx/compile"
+	gsxformat "github.com/kilianc/gsx/internal/gsx/format"
 	"github.com/kilianc/gsx/internal/gsx/parse"
 )
 
@@ -47,9 +48,14 @@ func Run(ctx context.Context, stdin io.Reader, stdout io.Writer, goplsArgs []str
 			if err != nil {
 				out = msg
 			}
-			// Capture any pending client notification to send back.
-			if diag := st.popPendingDiagnostic(); diag != nil {
-				_ = WriteMessage(stdout, diag)
+			// Anything the proxy answered itself goes straight back.
+			for _, pending := range st.takePendingForClient() {
+				_ = WriteMessage(stdout, pending)
+			}
+			// A nil result means the proxy handled the request and gopls must
+			// not see it.
+			if out == nil {
+				continue
 			}
 			if err := WriteMessage(p.stdin, out); err != nil {
 				errCh <- err
@@ -118,8 +124,9 @@ type state struct {
 	// initialize request id from client -> gopls; used to rewrite initialize response.
 	initializeID any
 
-	// Pending diagnostic notification to send to the client (e.g. compile errors).
-	pendingDiag []byte
+	// Messages the proxy itself owes the client: diagnostics it produced, and
+	// responses to requests gopls must not see.
+	pendingClient [][]byte
 }
 
 func newState() *state {
@@ -128,18 +135,40 @@ func newState() *state {
 	}
 }
 
-func (s *state) setPendingDiagnostic(msg []byte) {
+func (s *state) setPendingDiagnostic(msg []byte) { s.queueForClient(msg) }
+func (s *state) setPendingResponse(msg []byte)   { s.queueForClient(msg) }
+
+func (s *state) queueForClient(msg []byte) {
+	if msg == nil {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.pendingDiag = msg
+	s.pendingClient = append(s.pendingClient, msg)
 }
 
+// popPendingDiagnostic returns the next message the proxy owes the client, or
+// nil. It is a convenience for tests, which deal in one message at a time.
 func (s *state) popPendingDiagnostic() []byte {
+	msgs := s.takePendingForClient()
+	if len(msgs) == 0 {
+		return nil
+	}
+	// Put anything beyond the first back, preserving order.
+	if len(msgs) > 1 {
+		s.mu.Lock()
+		s.pendingClient = append(msgs[1:], s.pendingClient...)
+		s.mu.Unlock()
+	}
+	return msgs[0]
+}
+
+func (s *state) takePendingForClient() [][]byte {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	d := s.pendingDiag
-	s.pendingDiag = nil
-	return d
+	out := s.pendingClient
+	s.pendingClient = nil
+	return out
 }
 
 func (s *state) getDoc(gsxURI string) *docState {
@@ -389,6 +418,43 @@ func makeDiagnosticNotification(uri string, line, char int, msg string) []byte {
 	return b
 }
 
+// formattingResponse answers textDocument/formatting with a single edit
+// replacing the whole document.
+//
+// A whole-document edit rather than a minimal diff because the formatter works
+// on whole files, and the editor collapses it to the visible change anyway.
+func formattingResponse(id any, d *docState) []byte {
+	result := any(nil)
+
+	if d != nil {
+		if out, err := gsxformat.Source(uriToPath(d.gsxURI), []byte(d.gsxText)); err == nil {
+			if string(out) != d.gsxText {
+				lines := strings.Count(d.gsxText, "\n") + 1
+				result = []any{map[string]any{
+					"range": map[string]any{
+						"start": map[string]any{"line": 0, "character": 0},
+						// One past the last line, character 0, covers the whole
+						// buffer regardless of a trailing newline.
+						"end": map[string]any{"line": lines, "character": 0},
+					},
+					"newText": string(out),
+				}}
+			} else {
+				result = []any{}
+			}
+		}
+		// On a parse error, leave result nil: the diagnostics already say why,
+		// and reformatting broken source would be worse than doing nothing.
+	}
+
+	b, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"result":  result,
+	})
+	return b
+}
+
 func makeClearDiagnosticNotification(uri string) []byte {
 	diag := map[string]any{
 		"jsonrpc": "2.0",
@@ -548,6 +614,24 @@ func (s *state) rewriteClientToGopls(raw []byte) ([]byte, error) {
 		b, _ := json.Marshal(p)
 		m.Params = (*json.RawMessage)(&b)
 		return json.Marshal(m)
+
+	case "textDocument/formatting":
+		// gopls cannot format a .gsx buffer, and the generated Go view is not
+		// what the user is editing. Answer from the formatter directly.
+		var p struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+		}
+		if err := json.Unmarshal(*m.Params, &p); err != nil {
+			return nil, err
+		}
+		if !isGSXURI(p.TextDocument.URI) {
+			return raw, nil
+		}
+		s.setPendingResponse(formattingResponse(m.ID, s.getDoc(p.TextDocument.URI)))
+		// Swallow the request: gopls must not see it.
+		return nil, nil
 
 	case "textDocument/completion", "textDocument/definition", "textDocument/hover", "textDocument/signatureHelp":
 		// Rewrite position-bearing requests.

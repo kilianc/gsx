@@ -27,6 +27,9 @@ jobs:
       - name: Check generated files are up to date
         run: go run ./cmd/gsx -check ./...
 
+      - name: Check sources are formatted
+        run: go run ./cmd/gsx fmt -l ./...
+
       # The HTML tables are derived from the gomponents source, so a dependency
       # bump must be accompanied by a regenerated table.
       - name: Check generated HTML tables are up to date

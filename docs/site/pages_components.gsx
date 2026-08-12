@@ -5,7 +5,7 @@ func ComponentsPage() Page {
 		Slug:     "components",
 		Title:    "Components",
 		Subtitle: "Components are Go functions. Props are parameters. There is no component runtime.",
-		Body: (
+		Body:     (
 			<>
 				{Section("basics", "Uppercase tags call functions",
 					P(Text("A component is an ordinary function returning "), Code("Node"), Text(". An uppercase tag calls it.")),

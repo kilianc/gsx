@@ -233,6 +233,27 @@ func EditorsPage() Page {
 					Code("a < b"),
 					Text(" is never mistaken for a tag."),
 				),
+				html.H3(Text("Formatting")),
+				P(
+					Text("The language server formats "),
+					Code(".gsx"),
+					Text(
+						" buffers, so format-on-save works. The same formatter runs on the command line:",
+					),
+				),
+				Shell("gsx fmt -w ./..."),
+				P(
+					Text(
+						"Go code is formatted exactly as gofmt would format it. Markup keeps the shape you gave it and is only re-indented to match its surroundings — the formatter deliberately does not reflow attributes or move children onto their own lines.",
+					),
+				),
+				P(
+					Text("Use "),
+					Code("gsx fmt -l ./..."),
+					Text(" in CI to fail on unformatted sources, and "),
+					Code("gsx fmt -d"),
+					Text(" to see the diff."),
+				),
 				html.H3(Text("Commands")),
 				html.Table(
 					html.THead(html.Tr(html.Th(Text("Command")), html.Th(Text("Does")))),

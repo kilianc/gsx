@@ -401,3 +401,119 @@ func TestRewriteDidOpen_ParseErrorIsPositioned(t *testing.T) {
 		t.Errorf("message should not repeat the path or snippet: %q", d.Message)
 	}
 }
+
+// gopls cannot format a .gsx buffer, so the proxy answers formatting itself and
+// must not forward the request.
+func TestFormattingIsAnsweredByTheProxy(t *testing.T) {
+	st := newState()
+
+	unformatted := "package p\n\nfunc F() Node {\nreturn <p>hi</p>\n}\n"
+	open := mustMarshal(t, rpcMsg{
+		JSONRPC: "2.0",
+		Method:  "textDocument/didOpen",
+		Params: rawPtr(mustMarshal(t, map[string]any{
+			"textDocument": map[string]any{
+				"uri": "file:///test/page.gsx", "languageId": "gsx", "version": 1, "text": unformatted,
+			},
+		})),
+	})
+	if _, err := st.rewriteClientToGopls(open); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.popPendingDiagnostic()
+
+	req := mustMarshal(t, rpcMsg{
+		JSONRPC: "2.0",
+		ID:      42,
+		Method:  "textDocument/formatting",
+		Params: rawPtr(mustMarshal(t, map[string]any{
+			"textDocument": map[string]any{"uri": "file:///test/page.gsx"},
+			"options":      map[string]any{"tabSize": 4, "insertSpaces": false},
+		})),
+	})
+
+	out, err := st.rewriteClientToGopls(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != nil {
+		t.Errorf("request was forwarded to gopls: %s", out)
+	}
+
+	resp := st.popPendingDiagnostic()
+	if resp == nil {
+		t.Fatal("no response produced")
+	}
+
+	var msg struct {
+		ID     int `json:"id"`
+		Result []struct {
+			NewText string `json:"newText"`
+			Range   struct {
+				Start struct{ Line, Character int } `json:"start"`
+				End   struct{ Line, Character int } `json:"end"`
+			} `json:"range"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(resp, &msg); err != nil {
+		t.Fatal(err)
+	}
+	if msg.ID != 42 {
+		t.Errorf("id = %d, want 42", msg.ID)
+	}
+	if len(msg.Result) != 1 {
+		t.Fatalf("got %d edits, want 1", len(msg.Result))
+	}
+	if !strings.Contains(msg.Result[0].NewText, "\treturn <p>hi</p>") {
+		t.Errorf("edit did not format the body:\n%s", msg.Result[0].NewText)
+	}
+	// The edit must cover the whole buffer.
+	if msg.Result[0].Range.Start.Line != 0 || msg.Result[0].Range.End.Line < 5 {
+		t.Errorf("range %+v does not cover the document", msg.Result[0].Range)
+	}
+}
+
+// Formatting source that does not parse must produce no edits rather than
+// mangling it; the diagnostics already explain the problem.
+func TestFormattingBrokenSourceMakesNoEdits(t *testing.T) {
+	st := newState()
+
+	open := mustMarshal(t, rpcMsg{
+		JSONRPC: "2.0",
+		Method:  "textDocument/didOpen",
+		Params: rawPtr(mustMarshal(t, map[string]any{
+			"textDocument": map[string]any{
+				"uri": "file:///test/bad.gsx", "languageId": "gsx", "version": 1,
+				"text": "package p\n\nfunc F() Node {\n\treturn <div>hi</span>\n}\n",
+			},
+		})),
+	})
+	if _, err := st.rewriteClientToGopls(open); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.popPendingDiagnostic()
+
+	req := mustMarshal(t, rpcMsg{
+		JSONRPC: "2.0", ID: 7, Method: "textDocument/formatting",
+		Params: rawPtr(mustMarshal(t, map[string]any{
+			"textDocument": map[string]any{"uri": "file:///test/bad.gsx"},
+		})),
+	})
+	if _, err := st.rewriteClientToGopls(req); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := st.popPendingDiagnostic()
+	if resp == nil {
+		t.Fatal("no response produced")
+	}
+	var msg struct {
+		Result any `json:"result"`
+	}
+	if err := json.Unmarshal(resp, &msg); err != nil {
+		t.Fatal(err)
+	}
+	if msg.Result != nil {
+		t.Errorf("result = %v, want null for unparseable source", msg.Result)
+	}
+}
