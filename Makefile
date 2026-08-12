@@ -78,4 +78,4 @@ extension-check: tools-image ## Typecheck the extension
 # needs them. They are installed here instead.
 .PHONY: vsix
 vsix: tools-image ## Package the extension
-	$(DOCKER_RUN) sh -c "npm install --no-audit --no-fund && npm run compile && npx vsce package --no-dependencies"
+	$(DOCKER_RUN) sh -c "npm ci --ignore-scripts --no-audit --no-fund && npm run compile && vsce package --no-dependencies"

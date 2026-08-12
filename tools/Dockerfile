@@ -21,6 +21,13 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates git \
  && rm -rf /var/lib/apt/lists/*
 
+# vsce is installed globally, deliberately: as a devDependency of the extension
+# it makes `npm install` crash with "Exit handler never called!" after eight
+# minutes, reproducibly, on both macOS Docker and GitHub's Ubuntu runners.
+# Removing it from the project tree takes that install from 8 minutes of failure
+# to 5 seconds of success.
+RUN npm install -g --ignore-scripts --no-audit --no-fund @vscode/vsce@3.2.2
+
 # vscode-textmate and vscode-oniguruma are the engine VS Code itself uses to
 # tokenize, so a grammar test here reflects what an editor will actually do.
 RUN mkdir -p /opt/grammar && cd /opt/grammar \

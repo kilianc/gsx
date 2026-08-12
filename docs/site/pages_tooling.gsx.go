@@ -325,36 +325,59 @@ func EditorsPage() Page {
 				),
 			),
 			Section(
-				"vscode",
-				"VS Code and Cursor",
-				P(
-					Text("Install the extension from "),
-					Code("vscode/gsx-vscode/"),
-					Text(", and make sure "),
-					Code("gsx"),
-					Text(" is on your "),
-					Code("PATH"),
-					Text(":"),
-				),
+				"install",
+				"Installing",
+				html.H3(Text("1. The CLI")),
 				Shell("go install github.com/kilianc/gsx/cmd/gsx@latest"),
 				P(
-					Text("The extension starts "),
-					Code("gsx lsp"),
-					Text(" for every "),
-					Code(".gsx"),
-					Text(" file."),
+					Text(
+						"This is what the extension runs, so it has to be installed even if you only want editor support. ",
+					),
+					Text("The binary lands in "),
+					Code("$(go env GOPATH)/bin"),
+					Text(", which must be on your "),
+					Code("PATH"),
+					Text("."),
 				),
+				P(Text("Check it:")),
+				Shell("gsx -h"),
+				html.H3(Text("2. The extension")),
 				P(
 					Text(
-						"Building it needs Node, which GSX itself does not. The toolchain is pinned in ",
+						"It is not on the Marketplace yet, so build it from the repository. This needs ",
 					),
-					Code("tools/Dockerfile"),
-					Text(", so no JS toolchain is installed on your machine:"),
+					Link("https://www.docker.com", "Docker"),
+					Text(
+						" — the Node toolchain is pinned in a container so nothing is installed on your machine:",
+					),
 				),
-				Shell("make vsix"),
+				Shell(
+					`git clone https://github.com/kilianc/gsx
+cd gsx
+make vsix
+code --install-extension vscode/gsx-vscode/gsx-vscode-*.vsix`,
+				),
+				P(
+					Text("For Cursor, swap the last line for "),
+					Code("cursor --install-extension …"),
+					Text("."),
+				),
+				P(Text("If you already have Node and would rather not use Docker:")),
+				Shell(
+					`cd vscode/gsx-vscode
+npm install && npm run compile && npx vsce package --no-dependencies`,
+				),
+				P(
+					Text("Then reload the window and open a "),
+					Code(".gsx"),
+					Text(" file. "),
+					Text("The status bar reports the language server starting; "),
+					Code("GSX: Restart Language Server"),
+					Text(" in the command palette restarts it."),
+				),
 				Note(
 					P(
-						Text("On macOS, "),
+						Strong("On macOS, "),
 						Code("gsx"),
 						Text(" collides with Ghostscript's "),
 						Code("gsx"),
