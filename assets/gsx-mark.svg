@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="gsx">
+  <title>gsx</title>
+  <!--
+    The mark on its own: a curly brace whose pinch is an angle bracket.
+    The accent lightens on a dark background so the mark holds up either way.
+  -->
+  <style>
+    .ink { stroke: #6d4aff; }
+    @media (prefers-color-scheme: dark) { .ink { stroke: #a78bfa; } }
+  </style>
+  <g class="ink" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M23 11 L19 11 L19 26 L7 32 L19 38 L19 53 L23 53"/>
+    <path d="M23 11 L19 11 L19 26 L7 32 L19 38 L19 53 L23 53" transform="translate(64,0) scale(-1,1)"/>
+  </g>
+</svg>

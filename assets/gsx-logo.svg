@@ -1,34 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-label="GSX logo">
-  <defs>
-    <linearGradient id="gsxGradient" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#00ADD8"/>
-      <stop offset="1" stop-color="#007D9C"/>
-    </linearGradient>
-    <filter id="softShadow" x="-20%" y="-40%" width="140%" height="180%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="10" result="blur"/>
-      <feOffset in="blur" dx="0" dy="6" result="off"/>
-      <feColorMatrix in="off" type="matrix" values="
-        0 0 0 0 0
-        0 0 0 0 0
-        0 0 0 0 0
-        0 0 0 0.25 0" result="shadow"/>
-      <feMerge>
-        <feMergeNode in="shadow"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-  </defs>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 238 80" width="238" height="80" role="img" aria-label="gsx">
+  <title>gsx</title>
+  <!--
+    The mark is a curly brace whose pinch is an angle bracket: markup living
+    inside a Go expression, which is the whole idea of the language. The braces
+    hug the wordmark the way `{ }` hugs a spliced value.
 
-  <!-- Mark: angled brackets + slash, nodding to JSX -->
-  <g filter="url(#softShadow)">
-    <path d="M165 85 L85 180 L165 275" fill="none" stroke="url(#gsxGradient)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M420 85 L500 180 L420 275" fill="none" stroke="url(#gsxGradient)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M295 95 L250 270" fill="none" stroke="#0F172A" stroke-width="20" stroke-linecap="round" opacity="0.9"/>
+    Geometry: 80-unit box, 8-unit monoline strokes, x-height 28 on a baseline
+    at y=54. Letters are drawn as paths so the file needs no font.
+  -->
+  <g fill="none" stroke="#6d4aff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 12 L22 12 L22 32 L10 40 L22 48 L22 68 L32 68"/>
+    <path d="M32 12 L22 12 L22 32 L10 40 L22 48 L22 68 L32 68" transform="translate(238,0) scale(-1,1)"/>
   </g>
-
-  <!-- Wordmark -->
-  <g font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji" font-weight="800">
-    <text x="560" y="215" font-size="160" fill="#0F172A" letter-spacing="-6">gsx</text>
-    <text x="560" y="280" font-size="44" fill="#334155" font-weight="600" letter-spacing="0">JSX-ish for Go</text>
+  <g fill="none" stroke="#1a1a1c" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="78" cy="40" r="14"/>
+    <path d="M92 26 L92 58 C92 68 84 71 75 67"/>
+    <path d="M134 32 C134 24 110 24 110 33 C110 41 134 39 134 47 C134 56 110 56 110 48"/>
+    <path d="M150 26 L174 54"/>
+    <path d="M174 26 L150 54"/>
   </g>
 </svg>

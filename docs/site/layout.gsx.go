@@ -75,6 +75,11 @@ func Layout(p Page, pages []Page) Node {
 				),
 				html.TitleEl(Text(p.Title+" — GSX")),
 				html.Meta(html.Name("description"), html.Content(p.Subtitle)),
+				html.Link(
+					html.Rel("icon"),
+					html.Href("./favicon.svg"),
+					html.Type("image/svg+xml"),
+				),
 				El("style", Raw(stylesheet)),
 				Group(styles),
 			),
@@ -101,13 +106,61 @@ func Layout(p Page, pages []Page) Node {
 	}
 }
 
+// Logo is the wordmark: a curly brace whose pinch is an angle bracket, hugging
+// the name the way `{ }` hugs a spliced value.
+//
+// It is inline rather than an <img> so it takes its ink from the surrounding
+// text colour, which means it follows the light and dark themes for free. The
+// same drawing is in assets/gsx-logo.svg for the README.
+func Logo() Node {
+	brace := "M32 12 L22 12 L22 32 L10 40 L22 48 L22 68 L32 68"
+
+	return html.SVG(
+		html.Class("brand-logo"),
+		Attr("viewBox", "0 0 238 80"),
+		html.Height("22"),
+		html.Role("img"),
+		Attr("aria-label", "gsx"),
+		El(
+			"g",
+			Attr("fill", "none"),
+			Attr("stroke-width", "8"),
+			Attr("stroke-linecap", "round"),
+			Attr("stroke-linejoin", "round"),
+			html.Class("brand-braces"),
+			El("path", Attr("d", brace)),
+			El("path", Attr("d", brace), Attr("transform", "translate(238,0) scale(-1,1)")),
+		),
+		El(
+			"g",
+			Attr("fill", "none"),
+			Attr("stroke", "currentColor"),
+			Attr("stroke-width", "8"),
+			Attr("stroke-linecap", "round"),
+			Attr("stroke-linejoin", "round"),
+			El("circle", Attr("cx", "78"), Attr("cy", "40"), Attr("r", "14")),
+			El("path", Attr("d", "M92 26 L92 58 C92 68 84 71 75 67")),
+			El(
+				"path",
+				Attr(
+					"d",
+					"M134 32 C134 24 110 24 110 33 C110 41 134 39 134 47 C134 56 110 56 110 48",
+				),
+			),
+			El("path", Attr("d", "M150 26 L174 54")),
+			El("path", Attr("d", "M174 26 L150 54")),
+		),
+	)
+}
+
 func Header() Node {
 	return html.Header(
 		html.Class("topbar"),
 		html.A(
 			html.Class("brand"),
 			html.Href("./index.html"),
-			html.Span(html.Class("brand-mark"), Text("<gsx/>")),
+			Attr("aria-label", "GSX home"),
+			Logo(),
 		),
 		html.Nav(
 			html.Class("topnav"),

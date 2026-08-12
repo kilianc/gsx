@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 238 80" width="238" height="80" role="img" aria-label="gsx">
+  <title>gsx</title>
+  <!-- Dark-background variant of assets/gsx-logo.svg. Same geometry, lighter ink. -->
+  <g fill="none" stroke="#a78bfa" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 12 L22 12 L22 32 L10 40 L22 48 L22 68 L32 68"/>
+    <path d="M32 12 L22 12 L22 32 L10 40 L22 48 L22 68 L32 68" transform="translate(238,0) scale(-1,1)"/>
+  </g>
+  <g fill="none" stroke="#ececf0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="78" cy="40" r="14"/>
+    <path d="M92 26 L92 58 C92 68 84 71 75 67"/>
+    <path d="M134 32 C134 24 110 24 110 33 C110 41 134 39 134 47 C134 56 110 56 110 48"/>
+    <path d="M150 26 L174 54"/>
+    <path d="M174 26 L150 54"/>
+  </g>
+</svg>

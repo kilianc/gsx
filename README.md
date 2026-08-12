@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="assets/gsx-logo.svg" alt="GSX logo" width="420" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/gsx-logo-dark.svg" />
+    <img src="assets/gsx-logo.svg" alt="GSX" width="300" />
+  </picture>
 </p>
 
 <p align="center">
