@@ -127,12 +127,45 @@ type state struct {
 	// Messages the proxy itself owes the client: diagnostics it produced, and
 	// responses to requests gopls must not see.
 	pendingClient [][]byte
+
+	// gsxDiags holds the compile diagnostics GSX owns, per .gsx URI.
+	//
+	// publishDiagnostics replaces the whole set for a URI, so gopls publishing
+	// for the same file would otherwise wipe a GSX parse error the moment it
+	// arrived — which is exactly when the user needs to see it.
+	gsxDiags map[string][]any
 }
 
 func newState() *state {
 	return &state{
-		docs: map[string]*docState{},
+		docs:     map[string]*docState{},
+		gsxDiags: map[string][]any{},
 	}
+}
+
+// setGSXDiagnostics records the diagnostics GSX owns for a document and queues
+// the merged set for the client.
+func (s *state) setGSXDiagnostics(uri string, diags []any) {
+	s.mu.Lock()
+	if len(diags) == 0 {
+		delete(s.gsxDiags, uri)
+	} else {
+		s.gsxDiags[uri] = diags
+	}
+	s.mu.Unlock()
+
+	s.queueForClient(publishDiagnostics(uri, s.diagnosticsFor(uri, nil)))
+}
+
+// diagnosticsFor merges GSX's diagnostics with a set from gopls.
+func (s *state) diagnosticsFor(uri string, fromGopls []any) []any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out := make([]any, 0, len(s.gsxDiags[uri])+len(fromGopls))
+	out = append(out, s.gsxDiags[uri]...)
+	out = append(out, fromGopls...)
+	return out
 }
 
 func (s *state) setPendingDiagnostic(msg []byte) { s.queueForClient(msg) }
@@ -368,13 +401,13 @@ func mapDefinitionInsideBraces(d *docState, srcLine, srcCh int) (gl, gc int, ok 
 	return gl, gc, true
 }
 
-// makeCompileDiagnostic builds a diagnostic for a GSX compile failure.
+// gsxDiagnostic builds the diagnostic for a GSX compile failure.
 //
 // A *parse.Error knows the exact offset that failed, so the squiggle lands on
 // the offending character instead of at the top of the file. Its rendered form
 // repeats the path and a source snippet, which the editor already shows, so the
 // message is reduced to the bare text.
-func makeCompileDiagnostic(uri string, err error) []byte {
+func gsxDiagnostic(err error) []any {
 	line, char := 0, 0
 	msg := err.Error()
 
@@ -385,8 +418,85 @@ func makeCompileDiagnostic(uri string, err error) []byte {
 		line, char = l-1, c-1
 		msg = pe.Msg
 	}
+	if line < 0 {
+		line = 0
+	}
+	if char < 0 {
+		char = 0
+	}
 
-	return makeDiagnosticNotification(uri, line, char, "GSX: "+msg)
+	return []any{map[string]any{
+		"range": map[string]any{
+			"start": map[string]any{"line": line, "character": char},
+			// A zero-width range renders as a caret; extend by one so the
+			// editor draws a visible squiggle.
+			"end": map[string]any{"line": line, "character": char + 1},
+		},
+		"severity": 1,
+		"source":   "gsx",
+		"message":  "GSX: " + msg,
+	}}
+}
+
+// nullResponse answers a request with no result, which every LSP client treats
+// as "nothing here" rather than as a failure.
+func nullResponse(id any) []byte {
+	b, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"result":  nil,
+	})
+	return b
+}
+
+// publishDiagnostics builds the notification for a URI's full diagnostic set.
+func publishDiagnostics(uri string, diags []any) []byte {
+	if diags == nil {
+		diags = []any{}
+	}
+	b, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "textDocument/publishDiagnostics",
+		"params":  map[string]any{"uri": uri, "diagnostics": diags},
+	})
+	return b
+}
+
+// packageNameOf reads the package clause from GSX source.
+//
+// When a file fails to compile, the virtual Go view handed to gopls still has
+// to declare the same package as the rest of the directory. A placeholder of
+// `package p` made gopls report "found packages main and p" for every file in
+// the folder, and those diagnostics buried the parse error that caused it.
+// mergedDiagnostics re-encodes a gopls diagnostic set for a .gsx URI with
+// GSX's own diagnostics prepended.
+func mergedDiagnostics[T any](s *state, uri string, fromGopls []T) []byte {
+	converted := make([]any, 0, len(fromGopls))
+	for _, d := range fromGopls {
+		// Round-trip through JSON so gopls's fields survive untouched rather
+		// than being narrowed to the subset this proxy models.
+		b, err := json.Marshal(d)
+		if err != nil {
+			continue
+		}
+		var raw any
+		if json.Unmarshal(b, &raw) == nil {
+			converted = append(converted, raw)
+		}
+	}
+	return publishDiagnostics(uri, s.diagnosticsFor(uri, converted))
+}
+
+func packageNameOf(src string) string {
+	for _, line := range strings.Split(src, "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "package "); ok {
+			if name := strings.Fields(rest); len(name) > 0 {
+				return name[0]
+			}
+		}
+	}
+	return "p"
 }
 
 func makeDiagnosticNotification(uri string, line, char int, msg string) []byte {
@@ -538,11 +648,11 @@ func (s *state) rewriteClientToGopls(raw []byte) ([]byte, error) {
 
 		goSrc, sm, err := compile.CompileFileForLSP(uriToPath(p.TextDocument.URI), []byte(p.TextDocument.Text))
 		if err != nil {
-			goSrc = []byte("package p\n")
+			goSrc = []byte("package " + packageNameOf(p.TextDocument.Text) + "\n")
 			sm = nil
-			s.setPendingDiagnostic(makeCompileDiagnostic(p.TextDocument.URI, err))
+			s.setGSXDiagnostics(p.TextDocument.URI, gsxDiagnostic(err))
 		} else {
-			s.setPendingDiagnostic(makeClearDiagnosticNotification(p.TextDocument.URI))
+			s.setGSXDiagnostics(p.TextDocument.URI, nil)
 		}
 
 		d := &docState{
@@ -589,7 +699,7 @@ func (s *state) rewriteClientToGopls(raw []byte) ([]byte, error) {
 
 		goSrc, sm, err := compile.CompileFileForLSP(uriToPath(p.TextDocument.URI), []byte(newText))
 		if err != nil {
-			s.setPendingDiagnostic(makeCompileDiagnostic(p.TextDocument.URI, err))
+			s.setGSXDiagnostics(p.TextDocument.URI, gsxDiagnostic(err))
 			d := s.getDoc(p.TextDocument.URI)
 			if d == nil {
 				return raw, nil
@@ -602,7 +712,7 @@ func (s *state) rewriteClientToGopls(raw []byte) ([]byte, error) {
 			m.Params = (*json.RawMessage)(&b)
 			return json.Marshal(m)
 		}
-		s.setPendingDiagnostic(makeClearDiagnosticNotification(p.TextDocument.URI))
+		s.setGSXDiagnostics(p.TextDocument.URI, nil)
 
 		d := s.getDoc(p.TextDocument.URI)
 		if d == nil {
@@ -697,7 +807,8 @@ func (s *state) rewriteClientToGopls(raw []byte) ([]byte, error) {
 		// Ordinary Go: let gopls answer, at the mapped position.
 		gl, gc, ok := mapPositionSrcToGo(d, p.Position.Line, p.Position.Character)
 		if !ok {
-			return raw, nil
+			s.setPendingResponse(nullResponse(m.ID))
+			return nil, nil
 		}
 		p.TextDocument.URI = d.goURI
 		p.Position.Line, p.Position.Character = gl, gc
@@ -724,7 +835,8 @@ func (s *state) rewriteClientToGopls(raw []byte) ([]byte, error) {
 		}
 		d := s.getDoc(p.TextDocument.URI)
 		if d == nil {
-			return raw, nil
+			s.setPendingResponse(nullResponse(m.ID))
+			return nil, nil
 		}
 		if m.Method == "textDocument/definition" {
 			if gl, gc, ok := mapDefinitionInsideBraces(d, p.Position.Line, p.Position.Character); ok {
@@ -738,8 +850,15 @@ func (s *state) rewriteClientToGopls(raw []byte) ([]byte, error) {
 		}
 		gl, gc, ok := mapPositionSrcToGo(d, p.Position.Line, p.Position.Character)
 		if !ok {
-			// Can't map; let gopls decide (or return empty).
-			return raw, nil
+			// The position does not exist in the generated view — normally
+			// because the file currently has a parse error, so there is no
+			// source map. Answer with no result.
+			//
+			// Forwarding instead would send gopls a .gsx URI it has never been
+			// told about, and it replies with an error that the editor shows as
+			// "Request textDocument/hover failed" on every hover.
+			s.setPendingResponse(nullResponse(m.ID))
+			return nil, nil
 		}
 		p.TextDocument.URI = d.goURI
 		p.Position.Line = gl
@@ -806,11 +925,9 @@ func (s *state) rewriteGoplsToClient(raw []byte) ([]byte, error) {
 		gsxURI := goToGSXURI(p.URI)
 		d := s.getDoc(gsxURI)
 		if d == nil {
-			// Best-effort: just rewrite URI.
+			// Best-effort: just rewrite the URI, still merging GSX's own.
 			p.URI = gsxURI
-			b, _ := json.Marshal(p)
-			m.Params = (*json.RawMessage)(&b)
-			return json.Marshal(m)
+			return mergedDiagnostics(s, p.URI, p.Diagnostics), nil
 		}
 		p.URI = gsxURI
 		for i := range p.Diagnostics {
@@ -834,9 +951,11 @@ func (s *state) rewriteGoplsToClient(raw []byte) ([]byte, error) {
 				p.Diagnostics[i].Source = "gopls"
 			}
 		}
-		b, _ := json.Marshal(p)
-		m.Params = (*json.RawMessage)(&b)
-		return json.Marshal(m)
+		// publishDiagnostics replaces the whole set for a URI, so gopls's list
+		// has to carry GSX's own diagnostics along with it. Otherwise a parse
+		// error is published and then immediately wiped by whatever gopls says
+		// about the same file a moment later.
+		return mergedDiagnostics(s, p.URI, p.Diagnostics), nil
 	}
 
 	// Responses: best-effort rewrite any locations that point at *_gsx.go back to .gsx.
