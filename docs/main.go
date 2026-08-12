@@ -155,16 +155,25 @@ func wasmExecPath() (string, error) {
 	return "", fmt.Errorf("wasm_exec.js not found under %s", root)
 }
 
+// copyDir copies src into dst recursively; the editor bundle lives in a
+// vendor/ subdirectory and has to arrive with its structure intact.
 func copyDir(src, dst string) error {
 	entries, err := os.ReadDir(src)
 	if err != nil {
 		return err
 	}
 	for _, e := range entries {
+		from, to := filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())
 		if e.IsDir() {
+			if err := os.MkdirAll(to, 0o755); err != nil {
+				return err
+			}
+			if err := copyDir(from, to); err != nil {
+				return err
+			}
 			continue
 		}
-		if err := copyFile(filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())); err != nil {
+		if err := copyFile(from, to); err != nil {
 			return err
 		}
 	}

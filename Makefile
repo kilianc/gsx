@@ -67,10 +67,24 @@ DOCKER_RUN := docker run --rm -u "$$(id -u):$$(id -g)" -e HOME=/tmp \
 # the sources mounted in, so node_modules is already resolved.
 DOCKER_CHECK := docker run --rm -u "$$(id -u):$$(id -g)" -e HOME=/tmp \
 	-v "$(CURDIR)/vscode/gsx-vscode/src:/opt/ext/src:ro" -w /opt/ext $(TOOLS_IMAGE)
+# The editor bundle needs the whole repository in context, because it imports
+# the grammar out of vscode/gsx-vscode and writes into docs/static.
+DOCKER_WEB := docker run --rm -u "$$(id -u):$$(id -g)" -e HOME=/tmp \
+	-e npm_config_cache=/tmp/.npm \
+	-v "$(CURDIR):/work" -w /work/web $(TOOLS_IMAGE)
 
 .PHONY: tools-image
 tools-image: ## Build the pinned Node toolchain image
 	docker build -q -f tools/Dockerfile -t $(TOOLS_IMAGE) .
+
+# The bundle is checked in, so `make docs` needs only Go. Rebuild it when the
+# grammar or the editor dependencies change — the grammar is imported from the
+# extension, so a grammar change that is not followed by this leaves the
+# playground highlighting with the old one.
+.PHONY: editor
+editor: tools-image ## Rebuild docs/static/vendor from web/
+	$(DOCKER_WEB) npm install --no-audit --no-fund
+	$(DOCKER_WEB) npm run build
 
 .PHONY: grammar-test
 grammar-test: tools-image ## Tokenize fixtures with the real TextMate engine

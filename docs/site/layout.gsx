@@ -16,6 +16,11 @@ type Page struct {
 	// Scripts are script URLs to load at the end of the body, relative to the
 	// site root. Only the playground uses this; prose pages stay static.
 	Scripts []string
+	// Styles are extra stylesheet URLs. The site's own CSS is inlined; this is
+	// for vendored CSS too large to inline, like the editor's.
+	Styles []string
+	// Modules are ES module URLs. The editor bundle is ESM because Monaco is.
+	Modules []string
 	// Wide drops the sidebar and lets the page use the full window, which an
 	// editor beside its output needs and an article does not.
 	Wide bool
@@ -36,6 +41,17 @@ func Layout(p Page, pages []Page) Node {
 		scripts = append(scripts, <script src={src} defer></script>)
 	}
 
+	var styles []Node
+	for _, href := range p.Styles {
+		styles = append(styles, <link rel="stylesheet" href={href} />)
+	}
+
+	// Modules come before the deferred scripts: both wait for parsing, and the
+	// controller polls for the editor rather than assuming it has arrived.
+	for _, src := range p.Modules {
+		scripts = append(scripts, <script type="module" src={src}></script>)
+	}
+
 	var footer Node
 	if !p.Wide {
 		footer = Footer()
@@ -51,6 +67,7 @@ func Layout(p Page, pages []Page) Node {
 					<title>{p.Title + " — GSX"}</title>
 					<meta name="description" content={p.Subtitle} />
 					{El("style", Raw(stylesheet))}
+					{Group(styles)}
 				</head>
 				<body>
 					<a class="skip" href="#content">Skip to content</a>

@@ -13,7 +13,55 @@
   const TIMEOUT_MS = 4000;
   const DEBOUNCE_MS = 300;
 
+  // The textarea holds the seed source and is the editor until Monaco takes
+  // over. If the bundle fails to load it simply stays the editor, so the
+  // playground degrades to a plain text box rather than to nothing.
   const editor = document.getElementById("pg-editor");
+  const mount = document.getElementById("pg-mount");
+  let monaco = null;
+
+  // The editor is an ES module and this is a classic script, so they finish
+  // loading independently. Rather than order them, wait briefly for the global
+  // and carry on with the textarea if it never appears.
+  function waitForEditor(ms = 10000) {
+    if (window.GSXEditor) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const started = Date.now();
+      const tick = setInterval(() => {
+        if (window.GSXEditor) {
+          clearInterval(tick);
+          resolve(true);
+        } else if (Date.now() - started > ms) {
+          clearInterval(tick);
+          resolve(false);
+        }
+      }, 50);
+    });
+  }
+
+  async function attachMonaco() {
+    if (!mount) return;
+    if (!(await waitForEditor())) {
+      console.warn("playground: editor bundle did not load; using the textarea");
+      return;
+    }
+    try {
+      const ed = await window.GSXEditor.create(mount, {
+        value: editor.value,
+        onChange: (v) => {
+          // Keep the textarea authoritative so the rest of the controller —
+          // and the poisoned-source check — needs no special case.
+          editor.value = v;
+          onEdit();
+        },
+      });
+      monaco = ed;
+      mount.hidden = false;
+      editor.hidden = true;
+    } catch (err) {
+      console.error("playground: editor failed to load", err);
+    }
+  }
   const goPane = document.getElementById("pg-go");
   const htmlPane = document.getElementById("pg-html");
   const preview = document.getElementById("pg-preview");
@@ -121,6 +169,12 @@
       goPane.innerHTML = result.go_html || escapeHTML(result.go);
     }
 
+    // Only the compile step can place an error in the reader's own source, so
+    // markers are cleared on any other outcome rather than left stale.
+    if (monaco && (action === "compile" || result.diagnostics)) {
+      monaco.setMarkers(result.diagnostics ?? []);
+    }
+
     if (result.error) {
       showError(result.error, result.stage);
       return;
@@ -165,16 +219,18 @@
   }
 
   let debounce;
-  editor.addEventListener("input", () => {
+  function onEdit() {
     // Any edit clears the parked source, so a fixed loop runs again.
     if (poisoned !== null && editor.value !== poisoned) poisoned = null;
     clearTimeout(debounce);
     debounce = setTimeout(send, DEBOUNCE_MS);
-  });
+  }
 
-  // Tab should indent, not leave the editor.
+  editor.addEventListener("input", onEdit);
+
+  // Tab should indent, not leave the editor. Monaco handles this itself.
   editor.addEventListener("keydown", (e) => {
-    if (e.key !== "Tab") return;
+    if (e.key !== "Tab" || monaco) return;
     e.preventDefault();
     const { selectionStart: s, selectionEnd: t, value } = editor;
     editor.value = value.slice(0, s) + "\t" + value.slice(t);
@@ -191,4 +247,5 @@
   });
 
   spawn();
+  attachMonaco();
 })();

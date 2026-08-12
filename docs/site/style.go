@@ -363,6 +363,11 @@ th { font-weight: 620; color: var(--fg-muted); font-size: 12.5px; letter-spacing
 .pg-tab:hover { color: var(--fg); background: var(--bg-raised); }
 .pg-tab.is-active { color: var(--accent); background: var(--accent-soft); }
 
+/* Monaco's container. Hidden until the bundle attaches, so the textarea below
+   is what shows if it never does. */
+.pg-mount { flex: 1; min-height: 0; }
+.pg-mount[hidden] { display: none; }
+
 .pg-editor {
   flex: 1;
   width: 100%;

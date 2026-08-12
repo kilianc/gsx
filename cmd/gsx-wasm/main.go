@@ -119,6 +119,26 @@ func fail(err error) map[string]any {
 		// than one prefixed with a stage the UI is already showing.
 		out["error"] = perr.Err.Error()
 		out["stage"] = string(perr.Stage)
+		if d := diagnostics(perr.Diagnostics); d != nil {
+			out["diagnostics"] = d
+		}
+	}
+	return out
+}
+
+// diagnostics converts to the plain values syscall/js can hand to JavaScript.
+func diagnostics(ds []playground.Diagnostic) []any {
+	if len(ds) == 0 {
+		return nil
+	}
+	out := make([]any, 0, len(ds))
+	for _, d := range ds {
+		out = append(out, map[string]any{
+			"line":     d.Line,
+			"col":      d.Col,
+			"message":  d.Message,
+			"severity": d.Severity,
+		})
 	}
 	return out
 }

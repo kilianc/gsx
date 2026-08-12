@@ -16,6 +16,7 @@ package playground
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	goast "go/ast"
 	goparser "go/parser"
@@ -24,6 +25,7 @@ import (
 
 	"maragu.dev/gomponents"
 
+	"github.com/kilianc/gsx/internal/gsx/parse"
 	"github.com/kilianc/gsx/internal/gsx/playground/symbols"
 	"github.com/kilianc/gsx/pkg/gsx"
 
@@ -71,10 +73,44 @@ const (
 type Error struct {
 	Stage Stage
 	Err   error
+	// Diagnostics are positions in the reader's source, when the failure was
+	// one that could be placed exactly. See diagnosticsFor.
+	Diagnostics []Diagnostic
 }
 
 func (e *Error) Error() string { return string(e.Stage) + ": " + e.Err.Error() }
 func (e *Error) Unwrap() error { return e.Err }
+
+// Diagnostic is an error placed in the reader's own source, for an editor to
+// underline. Line and Col are 1-based, as the compiler reports them.
+type Diagnostic struct {
+	Line     int
+	Col      int
+	Message  string
+	Severity string // "error"
+}
+
+// diagnosticsFor returns the positions worth underlining.
+//
+// Only parse errors qualify. They carry an offset into the .gsx the reader
+// typed, so they land exactly where the mistake is. Everything else — Go parse
+// errors on the rewritten source, and anything the interpreter reports — is
+// positioned in generated code, and generated positions differ from what the
+// reader sees. Guessing a mapping would underline the wrong token, which is
+// worse than underlining nothing, so those stay in the error panel.
+func diagnosticsFor(err error) []Diagnostic {
+	var perr *parse.Error
+	if !errors.As(err, &perr) {
+		return nil
+	}
+	line, col := perr.Position()
+	return []Diagnostic{{
+		Line:     line,
+		Col:      col,
+		Message:  perr.Msg,
+		Severity: "error",
+	}}
+}
 
 // Result is the output of a successful run.
 type Result struct {
@@ -84,6 +120,9 @@ type Result struct {
 	Go string
 	// HTML is the rendered markup.
 	HTML string
+	// Diagnostics are positions in the reader's source to underline. Empty
+	// unless the failure was one the compiler could place exactly.
+	Diagnostics []Diagnostic
 }
 
 // Compile translates GSX source to Go source. It neither loads nor runs the
@@ -91,7 +130,7 @@ type Result struct {
 func Compile(src string) (string, error) {
 	out, err := gsx.CompileFile("page.gsx", []byte(src))
 	if err != nil {
-		return "", &Error{Stage: StageCompile, Err: err}
+		return "", &Error{Stage: StageCompile, Err: err, Diagnostics: diagnosticsFor(err)}
 	}
 	return string(out), nil
 }
