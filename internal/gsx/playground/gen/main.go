@@ -28,19 +28,17 @@ import (
 	"github.com/traefik/yaegi/extract"
 )
 
-// packages is every import the playground makes available to interpreted code.
+// packages is what gets extracted: the two gomponents packages the compiler
+// emits calls into.
 //
-// gomponents and gomponents/html are what the compiler emits. The rest is the
-// small slice of the standard library that markup realistically reaches for:
-// formatting a price, upper-casing a label, sorting rows. Adding to this list
-// widens the sandbox, so add deliberately.
+// Their surface is fixed by the version in go.mod, so extracting them produces
+// the same bytes on any toolchain. The standard library is not extracted for
+// exactly that reason — it would record whatever Go built it, and a table
+// generated on a newer release fails to compile on the version go.mod declares.
+// Those symbols are written out by hand in symbols/std.go instead.
 var packages = []string{
 	"maragu.dev/gomponents",
 	"maragu.dev/gomponents/html",
-	"fmt",
-	"strings",
-	"strconv",
-	"sort",
 }
 
 func main() {
