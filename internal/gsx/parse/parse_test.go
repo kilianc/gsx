@@ -335,6 +335,16 @@ func TestFragmentDetectionDoesNotBreakGo(t *testing.T) {
 		"package p; var x = a <- b",
 		"package p; var x = a << b",
 		"package p; func f() { v := <-ch; _ = v }",
+		// Unspaced, the operand before the `<` is the only thing separating a
+		// comparison from a `<b>` tag.
+		"package p; var x = a<b",
+		"package p; var x = a<<b",
+		"package p; var x = a<=b",
+		"package p; var x = a<<=b",
+		"package p; func f() { for i := 0; i<n; i++ { g() } }",
+		"package p; var x = f(y)<n",
+		"package p; var x = m[k]<n",
+		"package p; var x = a /* c */ <b",
 	} {
 		out, tags, err := RewriteTags("f.gsx", []byte(src))
 		if err != nil {
@@ -343,6 +353,47 @@ func TestFragmentDetectionDoesNotBreakGo(t *testing.T) {
 		}
 		if len(tags) != 0 || string(out) != src {
 			t.Errorf("%s: rewritten to %q with %d tags", src, out, len(tags))
+		}
+	}
+}
+
+// A splice is Go code, so the same rule applies inside one: `a<b` there is a
+// comparison and must reach the compiler untouched.
+func TestComparisonInsideSplice(t *testing.T) {
+	_, tags, err := RewriteTags("f.gsx", []byte(
+		"package p\nfunc F() Node { return <p class={m[a<b]}>{i<n}</p> }\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	el := tags[0].Node.(ast.Element)
+	if got := el.Attrs[0].Value; got != "m[a<b]" {
+		t.Errorf("attr value = %q, want %q", got, "m[a<b]")
+	}
+	if len(el.Attrs[0].Nested) != 0 {
+		t.Errorf("attr has %d nested tags, want 0", len(el.Attrs[0].Nested))
+	}
+	if got := el.Children[0].(ast.Expr).Src; got != "i<n" {
+		t.Errorf("child expr = %q, want %q", got, "i<n")
+	}
+}
+
+// The other half of the rule: after an operator, a keyword or a `{`, a `<` is
+// still a tag even with no space in front of it.
+func TestTagStartsAfterANonOperand(t *testing.T) {
+	for _, src := range []string{
+		"package p\nfunc F() Node { return <div/> }\n",
+		"package p\nfunc F() Node { return(<div/>) }\n",
+		"package p\nvar x = []Node{<div/>}\n",
+		"package p\nfunc F() Node { return <p>{ok && <div/>}</p> }\n",
+		"package p\nfunc F() Node { return /* c */ <div/> }\n",
+	} {
+		_, tags, err := RewriteTags("f.gsx", []byte(src))
+		if err != nil {
+			t.Errorf("%s: %v", src, err)
+			continue
+		}
+		if len(tags) != 1 {
+			t.Errorf("%s: got %d tags, want 1", src, len(tags))
 		}
 	}
 }

@@ -47,7 +47,7 @@ func RewriteTags(path string, src []byte) ([]byte, []Tag, error) {
 		if p.skipNonCode(&out) {
 			continue
 		}
-		if p.atTagStart() {
+		if p.atGoTagStart() {
 			srcStart := p.s.i
 			node, err := p.parseTag()
 			if err != nil {
@@ -67,9 +67,11 @@ func RewriteTags(path string, src []byte) ([]byte, []Tag, error) {
 				TgtStart: tgtStart,
 				TgtEnd:   out.Len(),
 			})
+			// The tag became a call, and a call ends an operand.
+			p.s.markToken(")")
 			continue
 		}
-		out.WriteByte(p.s.next())
+		p.copyGoToken(&out)
 	}
 
 	return []byte(out.String()), tags, nil
@@ -87,15 +89,51 @@ func (p *parser) skipNonCode(out *strings.Builder) bool {
 		switch p.s.peek() {
 		case '"':
 			out.WriteString(p.s.readStringLit())
+			p.s.markToken(`"`)
 		case '\'':
 			out.WriteString(p.s.readRuneLit())
+			p.s.markToken(`"`)
 		case '`':
 			out.WriteString(p.s.readRawString())
+			p.s.markToken(`"`)
 		default:
 			return false
 		}
 	}
 	return true
+}
+
+// copyGoToken copies one Go token — a word, a `<` operator, or a single byte —
+// through to out, recording it as the previous token for atGoTagStart.
+//
+// Words are copied whole because only the whole word tells a keyword from an
+// identifier, and `<` operators because otherwise the second `<` of `a<<b`
+// would be read as the start of `<b>`.
+func (p *parser) copyGoToken(out *strings.Builder) {
+	start := p.s.i
+
+	switch b := p.s.peek(); {
+	case isWordStart(b):
+		for isWordByte(p.s.peek()) {
+			p.s.next()
+		}
+		p.s.markToken(string(p.s.src[start:p.s.i]))
+	case b == '<':
+		for p.s.peek() == '<' {
+			p.s.next()
+		}
+		if p.s.peek() == '=' || p.s.peek() == '-' {
+			p.s.next()
+		}
+		p.s.markToken("<")
+	default:
+		p.s.next()
+		if !isSpaceByte(b) {
+			p.s.markToken(string(b))
+		}
+	}
+
+	out.Write(p.s.src[start:p.s.i])
 }
 
 // atTagStart reports whether the cursor sits on the `<` of a tag expression.
@@ -109,6 +147,17 @@ func (p *parser) atTagStart() bool {
 	}
 	b := p.s.peekN(1)
 	return isTagStart(b) || b == '>'
+}
+
+// atGoTagStart is atTagStart for Go-code position, where `<` is also the
+// comparison and shift operator.
+//
+// In child position a `<` can only be markup, but in Go code `a<b` and `a<<b`
+// are ordinary expressions that atTagStart alone would read as `<b>`. What
+// separates them is the token before: an operator or a keyword can be followed
+// by a tag, an operand cannot.
+func (p *parser) atGoTagStart() bool {
+	return p.atTagStart() && !endsOperand(p.s.prevToken())
 }
 
 // parseTag parses a single element or fragment starting at '<'.
@@ -343,6 +392,8 @@ func closeName(tag string) string {
 func (p *parser) readBracedExpr() (string, map[string]ast.Node, error) {
 	open := p.s.i
 	p.s.next() // '{'
+	// A splice opens a fresh Go region: whatever preceded it was markup.
+	p.s.markToken("{")
 
 	var out strings.Builder
 	var nested map[string]ast.Node
@@ -352,7 +403,7 @@ func (p *parser) readBracedExpr() (string, map[string]ast.Node, error) {
 		if p.skipNonCode(&out) {
 			continue
 		}
-		if p.atTagStart() {
+		if p.atGoTagStart() {
 			node, err := p.parseTag()
 			if err != nil {
 				return "", nil, err
@@ -365,6 +416,7 @@ func (p *parser) readBracedExpr() (string, map[string]ast.Node, error) {
 			nested[name] = node
 			out.WriteString(name)
 			out.WriteString("()")
+			p.s.markToken(")")
 			continue
 		}
 
@@ -378,7 +430,7 @@ func (p *parser) readBracedExpr() (string, map[string]ast.Node, error) {
 				return out.String(), nested, nil
 			}
 		}
-		out.WriteByte(p.s.next())
+		p.copyGoToken(&out)
 	}
 
 	return "", nil, p.errorf(open, "unterminated `{`: reached end of file without a matching `}`")

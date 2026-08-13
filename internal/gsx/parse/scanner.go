@@ -11,6 +11,45 @@ import "bytes"
 type scanner struct {
 	src []byte
 	i   int
+
+	// prev is the last significant token read in Go-code position. It is what
+	// tells `<div>` apart from `a<b`, since only the latter follows something
+	// that ends an operand. Literals are all recorded as `"`.
+	prev string
+}
+
+// markToken records tok as the last significant token. Whitespace and comments
+// are not significant: they leave the record alone, so `a /* c */ <b` still
+// sees `a`.
+func (s *scanner) markToken(tok string) { s.prev = tok }
+
+// prevToken returns the last significant token read in Go-code position, or ""
+// at the start of a Go region — a file, or the `{` of a splice.
+func (s *scanner) prevToken() string { return s.prev }
+
+// endsOperand reports whether tok can end a Go operand, which is what makes a
+// following `<` a comparison or a shift rather than the start of a tag.
+func endsOperand(tok string) bool {
+	switch tok {
+	case "":
+		return false
+	case ")", "]", "}", `"`:
+		return true
+	}
+	if isWordByte(tok[len(tok)-1]) {
+		// An identifier or a number ends an operand; a keyword never does, so
+		// `return <div/>` stays a tag.
+		return !goKeywords[tok]
+	}
+	return false
+}
+
+var goKeywords = map[string]bool{
+	"break": true, "case": true, "chan": true, "const": true, "continue": true,
+	"default": true, "defer": true, "else": true, "fallthrough": true, "for": true,
+	"func": true, "go": true, "goto": true, "if": true, "import": true,
+	"interface": true, "map": true, "package": true, "range": true, "return": true,
+	"select": true, "struct": true, "switch": true, "type": true, "var": true,
 }
 
 func (s *scanner) eof() bool { return s.i >= len(s.src) }
@@ -117,6 +156,14 @@ func (s *scanner) skipSpace() {
 
 func isTagStart(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
+
+func isWordStart(b byte) bool { return isTagStart(b) || b == '_' }
+
+func isWordByte(b byte) bool { return isWordStart(b) || (b >= '0' && b <= '9') }
+
+func isSpaceByte(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
 }
 
 func isTagNameByte(b byte) bool {
