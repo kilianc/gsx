@@ -150,6 +150,11 @@ Group{
 							<tr><td><code>AT&amp;T</code></td><td>unchanged</td><td>unchanged</td></tr>
 						</tbody>
 					</table>,
+					P(Text("A bare "), Code("<"), Text(" in text is a parse error, as it is in JSX: it reads as the start of a tag, and nothing distinguishes one you meant from one you mistyped. Write it as an entity, or splice it as a string.")),
+					Split(
+						GSX(`<p>a &lt; b</p>`),
+						Out("rendered", `<p>a &lt; b</p>`),
+					),
 				)}
 
 				{Section("comments", "Comments",
