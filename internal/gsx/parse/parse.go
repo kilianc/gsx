@@ -73,9 +73,11 @@ func RewriteTags(path string, src []byte) ([]byte, []Tag, error) {
 				TgtStart: tgtStart,
 				TgtEnd:   out.Len(),
 			})
+			// The tag left a call behind, and a call ends an operand.
+			p.s.markToken(")")
 			continue
 		}
-		out.WriteByte(p.s.next())
+		p.copyGoToken(&out)
 	}
 
 	return []byte(out.String()), tags, nil
@@ -96,6 +98,9 @@ func (p *parser) stalled(where string) *Error {
 
 // skipNonCode copies a comment or Go literal through verbatim, so that a `<`
 // inside one is never mistaken for a tag. It reports whether it consumed input.
+//
+// A literal is a token and is recorded as one; a comment is not, and leaves the
+// record alone so that it does not hide the operand it sits behind.
 func (p *parser) skipNonCode(out *strings.Builder) bool {
 	switch {
 	case p.s.startsWith("//"):
@@ -106,15 +111,52 @@ func (p *parser) skipNonCode(out *strings.Builder) bool {
 		switch p.s.peek() {
 		case '"':
 			out.WriteString(p.s.readStringLit())
+			p.s.markToken(`"`)
 		case '\'':
 			out.WriteString(p.s.readRuneLit())
+			p.s.markToken("'")
 		case '`':
 			out.WriteString(p.s.readRawString())
+			p.s.markToken("`")
 		default:
 			return false
 		}
 	}
 	return true
+}
+
+// copyGoToken copies one token of Go code through to out and records it.
+//
+// A word and a `<` operator are copied whole rather than a byte at a time:
+// only the whole word tells a keyword from an identifier, and only the whole
+// operator keeps the second `<` of `a<<b` from being read as the start of a
+// `<b>` tag. Everything else is one byte, which is as much as the rule below
+// ever needs.
+func (p *parser) copyGoToken(out *strings.Builder) {
+	start := p.s.i
+
+	switch b := p.s.peek(); {
+	case isWordByte(b):
+		for isWordByte(p.s.peek()) {
+			p.s.next()
+		}
+		p.s.markToken(string(p.s.src[start:p.s.i]))
+	case b == '<':
+		for p.s.peek() == '<' {
+			p.s.next()
+		}
+		if p.s.peek() == '=' || p.s.peek() == '-' {
+			p.s.next()
+		}
+		p.s.markToken("<")
+	default:
+		p.s.next()
+		if !isSpace(b) {
+			p.s.markToken(string(b))
+		}
+	}
+
+	out.Write(p.s.src[start:p.s.i])
 }
 
 // atTagStart reports whether the cursor sits on the `<` of a tag expression in
@@ -141,9 +183,9 @@ func (p *parser) atTagStart() bool {
 // one, so the preceding token decides — an identifier, a number, a literal or a
 // closing bracket ends an operand and rules the tag out.
 //
-// The check reads the raw bytes before the cursor, so a comment sitting between
-// the operand and the `<` (`{a /* note */ <b}`) still fools it. Adding spaces
-// around the operator is the workaround for that residue.
+// The token comes from the scanner's forward record rather than from a backward
+// scan, so whatever the cursor already walked past is what it sees: comments and
+// literals cost nothing to skip, because copying them is what records them.
 func (p *parser) atGoTagStart() bool {
 	return p.atTagStart() && !endsOperand(p.s.prevToken())
 }
@@ -162,9 +204,9 @@ func endsOperand(tok string) bool {
 	switch tok {
 	case ")", "]", "}", `"`, "'", "`":
 		return true
-	case "<":
-		return true // the tail of a `<<` shift, which scans as `<` then `<b`
 	}
+	// Everything else is punctuation or an operator, and an operator is the one
+	// thing a tag is guaranteed to be able to follow: `ch <- <div/>` sends a tag.
 	return false
 }
 
@@ -435,6 +477,8 @@ func closeName(tag string) string {
 func (p *parser) readBracedExpr() (string, map[string]ast.Node, error) {
 	open := p.s.i
 	p.s.next() // '{'
+	// A splice opens a fresh Go region, whatever the markup around it was.
+	p.s.markToken("{")
 
 	var out strings.Builder
 	var nested map[string]ast.Node
@@ -463,6 +507,7 @@ func (p *parser) readBracedExpr() (string, map[string]ast.Node, error) {
 			nested[name] = node
 			out.WriteString(name)
 			out.WriteString("()")
+			p.s.markToken(")")
 			continue
 		}
 
@@ -476,7 +521,7 @@ func (p *parser) readBracedExpr() (string, map[string]ast.Node, error) {
 				return out.String(), nested, nil
 			}
 		}
-		out.WriteByte(p.s.next())
+		p.copyGoToken(&out)
 	}
 
 	return "", nil, p.errorf(open, "unterminated `{`: reached end of file without a matching `}`")

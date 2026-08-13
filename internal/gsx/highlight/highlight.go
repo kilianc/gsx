@@ -64,7 +64,19 @@ type lexer struct {
 	src  string
 	i    int
 	toks []Token
+
+	// prev is the last significant token lexed in Go position, recorded as the
+	// cursor walks over it — see atGoTagStart.
+	prev string
 }
+
+// markToken records tok as the last significant token in Go position. Spaces
+// and comments are not tokens and do not call it.
+func (l *lexer) markToken(tok string) { l.prev = tok }
+
+// prevToken returns the last recorded token, or "" at the start of a Go region
+// — the snippet, or the `{` of a splice.
+func (l *lexer) prevToken() string { return l.prev }
 
 func (l *lexer) emit(n int, c Class) {
 	if n <= 0 {
@@ -73,6 +85,14 @@ func (l *lexer) emit(n int, c Class) {
 	end := min(l.i+n, len(l.src))
 	l.toks = append(l.toks, Token{Text: l.src[l.i:end], Class: c})
 	l.i = end
+}
+
+// emitted is emit for a token whose text the caller still needs, since emit
+// advances past it.
+func (l *lexer) emitted(n int, c Class) string {
+	text := l.src[l.i:min(l.i+n, len(l.src))]
+	l.emit(n, c)
+	return text
 }
 
 func (l *lexer) peek(n int) byte {
@@ -89,26 +109,55 @@ func (l *lexer) has(prefix string) bool {
 // lexGo scans Go code, handing off to lexTag when a tag expression begins.
 func (l *lexer) lexGo() {
 	for l.i < len(l.src) {
-		switch {
-		case l.has("//"):
-			l.emit(l.until("\n"), ClassComment)
-		case l.has("/*"):
-			l.emit(l.untilAfter("*/", 2), ClassComment)
-		case l.peek(0) == '"':
-			l.emit(l.quoted('"'), ClassString)
-		case l.peek(0) == '\'':
-			l.emit(l.quoted('\''), ClassString)
-		case l.peek(0) == '`':
-			l.emit(l.untilAfter("`", 1), ClassString)
-		case l.atGoTagStart():
-			l.lexTag()
-		case isDigit(l.peek(0)) && !isNameByte(l.prevByte()):
-			l.emit(l.span(isNumByte), ClassNumber)
-		case isNameStart(l.peek(0)):
-			n := l.span(isNameByte)
-			l.emit(n, classifyWord(l.src[l.i:l.i+n]))
-		default:
-			l.emit(1, ClassNone)
+		l.lexGoToken()
+	}
+}
+
+// lexGoToken lexes one token of Go code and records it as the previous token
+// where it is significant — a comment and a space are not.
+//
+// lexSplice shares it: a splice is Go code too, and the only thing it lexes
+// differently is its own braces.
+func (l *lexer) lexGoToken() {
+	switch {
+	case l.has("//"):
+		l.emit(l.until("\n"), ClassComment)
+	case l.has("/*"):
+		l.emit(l.untilAfter("*/", 2), ClassComment)
+	case l.peek(0) == '"':
+		l.emit(l.quoted('"'), ClassString)
+		l.markToken(`"`)
+	case l.peek(0) == '\'':
+		l.emit(l.quoted('\''), ClassString)
+		l.markToken("'")
+	case l.peek(0) == '`':
+		l.emit(l.untilAfter("`", 1), ClassString)
+		l.markToken("`")
+	case l.atGoTagStart():
+		l.lexTag()
+		l.markToken(")") // a tag is a value, like the call it compiles to
+	case isDigit(l.peek(0)) && !isNameByte(l.prevByte()):
+		l.markToken(l.emitted(l.span(isNumByte), ClassNumber))
+	case isNameStart(l.peek(0)):
+		n := l.span(isNameByte)
+		l.markToken(l.emitted(n, classifyWord(l.src[l.i:l.i+n])))
+	case l.peek(0) == '<':
+		// Emitted whole, or the second `<` of `a<<b` would be read as the start
+		// of a `<b>` tag.
+		n := 1
+		for l.peek(n) == '<' {
+			n++
+		}
+		if c := l.peek(n); c == '=' || c == '-' {
+			n++
+		}
+		l.emit(n, ClassNone)
+		l.markToken("<")
+	default:
+		b := l.peek(0)
+		l.emit(1, ClassNone)
+		if !isSpace(b) {
+			l.markToken(string(b))
 		}
 	}
 }
@@ -123,38 +172,14 @@ func (l *lexer) atTagStart() bool {
 // atGoTagStart is atTagStart for Go code — the top level of a snippet, or the
 // inside of a `{...}` splice — where `<` is more often an operator than a tag.
 //
-// It ports parse.atGoTagStart byte for byte, including its residue: the check
-// reads the raw bytes before the cursor, so a comment between the operand and
-// the `<` (`{a /* note */ <b}`) fools it into seeing a tag. Divergence here
-// would be worse than that residue. Colouring `a<b` as markup where the
-// compiler reads a comparison teaches the syntax wrong, and colouring the
-// residue as a comparison hides why the file will not build.
+// It ports parse.atGoTagStart, down to recording the previous token forwards
+// rather than scanning back for it, so that a comment between the operand and
+// the operator does not hide the operand here either. Divergence is what this
+// is written to avoid: colouring `a<b` as markup where the compiler reads a
+// comparison teaches the syntax wrong, and colouring a real tag as Go leaves
+// the one construct the page exists to explain unhighlighted.
 func (l *lexer) atGoTagStart() bool {
 	return l.atTagStart() && !endsOperand(l.prevToken())
-}
-
-// prevToken returns the token immediately before the cursor, skipping spaces: a
-// whole identifier or number if the preceding byte is a word byte, and
-// otherwise that single byte on its own. It returns "" at the start of input.
-//
-// It reads the source rather than the tokens already emitted, so that it stays
-// the same rule as the scanner's — see parse.scanner.prevToken.
-func (l *lexer) prevToken() string {
-	j := l.i - 1
-	for j >= 0 && isSpace(l.src[j]) {
-		j--
-	}
-	if j < 0 {
-		return ""
-	}
-	if !isNameByte(l.src[j]) {
-		return l.src[j : j+1]
-	}
-	end := j + 1
-	for j >= 0 && isNameByte(l.src[j]) {
-		j--
-	}
-	return l.src[j+1 : end]
 }
 
 // endsOperand reports whether tok closes an operand, making a `<` right after
@@ -171,9 +196,9 @@ func endsOperand(tok string) bool {
 	switch tok {
 	case ")", "]", "}", `"`, "'", "`":
 		return true
-	case "<":
-		return true // the tail of a `<<` shift, which scans as `<` then `<b`
 	}
+	// Everything else is punctuation or an operator, and an operator is the one
+	// thing a tag is guaranteed to be able to follow: `ch <- <div/>` sends a tag.
 	return false
 }
 
@@ -260,39 +285,28 @@ func (l *lexer) lexChildren() {
 // Go — which is what makes a nested tag inside a splice highlight correctly.
 func (l *lexer) lexSplice() {
 	l.emit(1, ClassBrace) // '{'
+	l.markToken("{")      // a splice opens a fresh Go region
 
 	depth := 1
 	for l.i < len(l.src) {
-		switch {
-		case l.has("//"):
-			l.emit(l.until("\n"), ClassComment)
-		case l.has("/*"):
-			l.emit(l.untilAfter("*/", 2), ClassComment)
-		case l.peek(0) == '"':
-			l.emit(l.quoted('"'), ClassString)
-		case l.peek(0) == '\'':
-			l.emit(l.quoted('\''), ClassString)
-		case l.peek(0) == '`':
-			l.emit(l.untilAfter("`", 1), ClassString)
-		case l.atGoTagStart():
-			l.lexTag()
-		case l.peek(0) == '{':
+		// Only a brace at the cursor counts: one inside a comment or a literal
+		// is consumed whole by lexGoToken and never reaches this switch.
+		switch l.peek(0) {
+		case '{':
 			depth++
 			l.emit(1, ClassBrace)
-		case l.peek(0) == '}':
+			l.markToken("{")
+			continue
+		case '}':
 			depth--
 			l.emit(1, ClassBrace)
+			l.markToken("}")
 			if depth == 0 {
 				return
 			}
-		case isDigit(l.peek(0)) && !isNameByte(l.prevByte()):
-			l.emit(l.span(isNumByte), ClassNumber)
-		case isNameStart(l.peek(0)):
-			n := l.span(isNameByte)
-			l.emit(n, classifyWord(l.src[l.i:l.i+n]))
-		default:
-			l.emit(1, ClassNone)
+			continue
 		}
+		l.lexGoToken()
 	}
 }
 
