@@ -20,6 +20,11 @@ check: ## Fail if any checked-in generated file is out of date, or any source is
 test: ## Run the full test suite
 	go test ./...
 
+.PHONY: fuzz
+fuzz: ## Hunt for input the parser cannot make progress on (FUZZTIME=2m make fuzz)
+	go test ./internal/gsx/parse -run FuzzRewriteTagsMakesProgress \
+		-fuzz FuzzRewriteTagsMakesProgress -fuzztime $(or $(FUZZTIME),1m)
+
 .PHONY: golden
 golden: gen ## Regenerate every golden file, then run the tests
 	go test ./e2e -update

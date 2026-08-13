@@ -50,6 +50,18 @@ jobs:
       - name: Test
         run: go test ./...
 
+      # A parse loop that consumes nothing spins forever rather than failing, so
+      # it cannot be caught by asserting on output — the symptom is a wedged
+      # process, not a wrong answer. The seed corpus runs above with the other
+      # tests; this looks for shapes nobody thought to seed. The timeout is the
+      # backstop: if an input ever does hang outright, the run fails with a
+      # stack trace pointing at the loop instead of hanging the job.
+      - name: Fuzz the parser for hangs
+        run: |
+          go test ./internal/gsx/parse -timeout 5m \
+            -run FuzzRewriteTagsMakesProgress \
+            -fuzz FuzzRewriteTagsMakesProgress -fuzztime 60s
+
   extension:
     runs-on: ubuntu-latest
     steps:
