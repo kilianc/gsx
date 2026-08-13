@@ -169,6 +169,7 @@ func Header() Node {
 			html.A(html.Href("./components.html"), Text("Components")),
 			html.A(html.Href("./live-reload.html"), Text("Live reload")),
 			html.A(html.Href("./editors.html"), Text("Editors")),
+			html.A(html.Href("./releases.html"), Text("Releases")),
 			html.A(
 				html.Class("ext"),
 				html.Href("https://github.com/kilianc/gsx"),

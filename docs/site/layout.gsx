@@ -129,6 +129,7 @@ func Header() Node {
 				<a href="./components.html">Components</a>
 				<a href="./live-reload.html">Live reload</a>
 				<a href="./editors.html">Editors</a>
+				<a href="./releases.html">Releases</a>
 				<a class="ext" href="https://github.com/kilianc/gsx">GitHub</a>
 			</nav>
 		</header>

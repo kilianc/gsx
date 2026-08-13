@@ -19,6 +19,7 @@ func Pages() []Page {
 		OrganizingPage(),
 		LiveReloadPage(),
 		EditorsPage(),
+		ReleasesPage(),
 	}
 }
 

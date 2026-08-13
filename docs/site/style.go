@@ -298,6 +298,48 @@ th { font-weight: 620; color: var(--fg-muted); font-size: 12.5px; letter-spacing
 .card h3 { margin: 0 0 6px; font-size: 15.5px; font-weight: 620; }
 .card p { margin: 0; font-size: 14.5px; color: var(--fg-muted); }
 
+/* Releases ---------------------------------------------------------------- */
+
+.release-index { display: flex; flex-wrap: wrap; gap: 8px; margin: -22px 0 8px; }
+.release-pill {
+  padding: 3px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-raised);
+  font: 550 13px/1.7 var(--mono);
+  color: var(--fg-muted);
+}
+.release-pill:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+
+/* Each release is a heading with a date and a status beside it rather than
+   above it, so the version stays the thing you scan for. */
+.release-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.release-head h2 { margin: 0; font-family: var(--mono); font-size: 21px; letter-spacing: -0.01em; }
+.release-date { font-size: 13.5px; color: var(--fg-faint); }
+a.release-date { color: var(--fg-muted); }
+
+.release-badge {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 660;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.release-badge-open { background: var(--bg-code); color: var(--fg-muted); }
+
+.release + .release { border-top: 1px solid var(--border); padding-top: 34px; }
+.release .release-summary { margin-bottom: 22px; font-size: 17px; color: var(--fg-muted); }
+.release h3 { margin-top: 26px; }
+
+.release-ref { margin-left: 7px; font: 500 13px/1 var(--mono); color: var(--fg-faint); }
+.release-ref:hover { color: var(--accent); }
+
+.release-links { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 22px; font-size: 14px; }
+.release-links .ext::after { content: " ↗"; font-size: 11px; color: var(--fg-faint); }
+
 /* Playground
    ------------------------------------------------------------------ */
 
