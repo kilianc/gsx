@@ -360,6 +360,11 @@ func TestUnspacedComparisonsAreNotTags(t *testing.T) {
 		"package p\nfunc f() { _ = xs[0]<y }\n",
 		"package p\nfunc f() { _ = T{}<y }\n",
 		`package p` + "\n" + `func f() { _ = len("s")<n }` + "\n",
+		"package p\nvar ok = a<=b\n",
+		"package p\nfunc f() { a<<=b }\n",
+		// A comment is not a token, so it does not hide the operand in front of
+		// it: the `<` still follows `a`.
+		"package p\nvar ok = a /* c */ <b\n",
 	} {
 		out, tags, err := RewriteTags("f.gsx", []byte(src))
 		if err != nil {
@@ -383,6 +388,7 @@ func TestUnspacedComparisonInSplice(t *testing.T) {
 		{"package p\nvar x = <p>{a<b}</p>\n", "a<b"},
 		{"package p\nvar x = <p>{If(i<n, y)}</p>\n", "If(i<n, y)"},
 		{"package p\nvar x = <p>{f(a<<b)}</p>\n", "f(a<<b)"},
+		{"package p\nvar x = <p>{a /* c */ <b}</p>\n", "a /* c */ <b"},
 	} {
 		_, tags, err := RewriteTags("f.gsx", []byte(tt.src))
 		if err != nil {
@@ -418,6 +424,10 @@ func TestTagsStillParseInOperandPositions(t *testing.T) {
 		{"package p\nvar x = <div>{func() Node { return <p/> }()}</div>\n", 1},
 		{"package p\nvar x = <div>{[]Node{<p/>}}</div>\n", 1},
 		{"package p\nvar x = <>a</>\n", 1},
+		// A comment does not move the rule either way: what precedes the `<` is
+		// still `return`, and an operator is still an operator.
+		{"package p\nfunc F() Node { return /* c */ <p/> }\n", 1},
+		{"package p\nfunc F(ch chan Node) { ch <- <p/> }\n", 1},
 	} {
 		_, tags, err := RewriteTags("f.gsx", []byte(tt.src))
 		if err != nil {
@@ -445,9 +455,13 @@ func TestChildPositionStillTreatsAngleAsTag(t *testing.T) {
 	}
 }
 
+// What the rule above reads is whatever walking the source left behind, so it
+// is worth pinning on its own — including the two tokens that are not one byte
+// (a word, a `<` operator) and the two constructs that must not count as a
+// token at all (space, a comment).
 func TestPrevToken(t *testing.T) {
 	for _, tt := range []struct {
-		src  string // the cursor sits at the end of src
+		src  string // walked start to end; the cursor ends at the end of src
 		want string
 	}{
 		{"", ""},
@@ -459,13 +473,35 @@ func TestPrevToken(t *testing.T) {
 		{"f(x)", ")"},
 		{"m[a]", "]"},
 		{"a <", "<"},
+		{"a <<", "<"},
+		{"a <<=", "<"},
 		{"return  ", "return"},
+		{"a /* c */ ", "a"},
+		{"a // c\n", "a"},
+		{`"s" `, `"`},
 	} {
-		s := &scanner{src: []byte(tt.src), i: len(tt.src)}
-		if got := s.prevToken(); got != tt.want {
-			t.Errorf("prevToken(%q) = %q, want %q", tt.src, got, tt.want)
+		got, out := walkGo(tt.src)
+		if got != tt.want {
+			t.Errorf("prevToken after %q = %q, want %q", tt.src, got, tt.want)
+		}
+		if out != tt.src {
+			t.Errorf("walking %q copied out %q", tt.src, out)
 		}
 	}
+}
+
+// walkGo runs RewriteTags' Go-code loop over src — minus tags, which the cases
+// above do not use — and returns the recorded token and everything copied out.
+func walkGo(src string) (prev, out string) {
+	p := &parser{s: &scanner{src: []byte(src)}}
+	var sb strings.Builder
+	for !p.s.eof() {
+		if p.skipNonCode(&sb) {
+			continue
+		}
+		p.copyGoToken(&sb)
+	}
+	return p.s.prevToken(), sb.String()
 }
 
 // A stray `<` in child position used to consume nothing, so parseChildren spun

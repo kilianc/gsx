@@ -164,10 +164,12 @@ func TestGoCodeTagDetection(t *testing.T) {
 		// Child position keeps the loose rule, where a `<` can only be markup.
 		{"child position", `<p>a<b>c</b></p>`, []string{"<p>", "<b>", "</b></p>"}},
 
-		// parse reads the raw bytes before the `<`, so a comment wedged between
-		// the operand and the operator reads as a tag there. Colouring it as a
-		// comparison here would hide why the file does not build.
-		{"comment before the operator", `a /* c */ <b`, []string{"<b"}},
+		// A comment is not a token in either lexer, so it does not hide the
+		// operand it sits behind: this is still `a < b`.
+		{"comment before the operator", `a /* c */ <b`, nil},
+		{"comment before a tag", `return /* c */ <div/>`, []string{"<div/>"}},
+		{"comment inside a splice", `<p>{a /* c */ <b}</p>`, []string{"<p>", "</p>"}},
+		{"send statement", `ch <- <div/>`, []string{"<div/>"}},
 	}
 
 	for _, tt := range tests {

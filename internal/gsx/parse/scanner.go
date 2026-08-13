@@ -11,6 +11,11 @@ import "bytes"
 type scanner struct {
 	src []byte
 	i   int
+
+	// prev is the last significant token passed in Go-code position, recorded as
+	// the cursor walks over it. It is what tells `<div>` from `a<b`, since only
+	// the latter follows something that ends an operand — see atGoTagStart.
+	prev string
 }
 
 func (s *scanner) eof() bool { return s.i >= len(s.src) }
@@ -110,29 +115,16 @@ func (s *scanner) skipSpace() {
 	}
 }
 
-// prevToken returns the token immediately before the cursor, skipping spaces:
-// a whole identifier or number if the preceding byte is a word byte, and
-// otherwise that single byte on its own. It returns "" at the start of input.
+// markToken records tok as the last significant token in Go-code position.
 //
-// This is the one place the scanner looks backwards. It exists so tag detection
-// can tell an operator from an operand without lexing Go — see atGoTagStart.
-func (s *scanner) prevToken() string {
-	j := s.i - 1
-	for j >= 0 && isSpace(s.src[j]) {
-		j--
-	}
-	if j < 0 {
-		return ""
-	}
-	if !isWordByte(s.src[j]) {
-		return string(s.src[j])
-	}
-	end := j + 1
-	for j >= 0 && isWordByte(s.src[j]) {
-		j--
-	}
-	return string(s.src[j+1 : end])
-}
+// Whitespace and comments are not significant and do not call it, which is the
+// whole advantage of recording forwards: they are already skipped by the time
+// the cursor reaches the `<`, so `a /* note */ <b` still sees `a`.
+func (s *scanner) markToken(tok string) { s.prev = tok }
+
+// prevToken returns the last recorded token, or "" at the start of a Go region
+// — the file, or the `{` of a splice.
+func (s *scanner) prevToken() string { return s.prev }
 
 func isSpace(b byte) bool {
 	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
