@@ -36,6 +36,14 @@ func FuzzRewriteTagsMakesProgress(f *testing.F) {
 		"package p\nvar x = <p attr=\"",
 		"package p\nvar x = <p>{",
 		"package p\nvar x = a < b\n",
+		// Unspaced operators, where tag detection looks at the preceding token
+		// rather than the following byte — the two rules meet on these.
+		"package p\nvar ok = a<b\n",
+		"package p\nvar y = a<<b\n",
+		"package p\nvar x = <p class={m[a<b]}>hi</p>\n",
+		"package p\nvar x = <p>{f(a<<b)}</p>\n",
+		"package p\nvar x = <p>a<b>c</b></p>\n",
+		"package p\nfunc f() { for i := 0; i<n; i++ {} }\n",
 		"package p\nvar x = `<`\n",
 		"package p\n// <\n",
 		"package p\n/* < */\n",
