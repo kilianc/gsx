@@ -3,6 +3,7 @@ package parse
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kilianc/gsx/internal/gsx/ast"
 )
@@ -464,6 +465,62 @@ func TestPrevToken(t *testing.T) {
 		if got := s.prevToken(); got != tt.want {
 			t.Errorf("prevToken(%q) = %q, want %q", tt.src, got, tt.want)
 		}
+	}
+}
+
+// A stray `<` in child position used to consume nothing, so parseChildren spun
+// on it forever. Each case must return — an error is the answer, a hang is not.
+//
+// Note the division of labour with TestChildPositionStillTreatsAngleAsTag: in
+// markup a `<` followed by a letter is a tag, so only a `<` that opens nothing
+// at all lands here.
+func TestStrayLessThanInTextIsRejected(t *testing.T) {
+	for _, tt := range []struct {
+		src  string
+		want string
+	}{
+		{"package p\nvar x = <p>a < b</p>\n", "unexpected `<` in <p>"},
+		{"package p\nvar x = <p>5 <= 6</p>\n", "unexpected `<` in <p>"},
+		{"package p\nvar x = <p>a <3 b</p>\n", "unexpected `<` in <p>"},
+		{"package p\nvar x = <p>a <-ch</p>\n", "unexpected `<` in <p>"},
+		{"package p\nvar x = <>a < b</>\n", "unexpected `<` in <>"},
+		{"package p\nvar x = <p>{a}< </p>\n", "unexpected `<` in <p>"},
+		{"package p\nvar x = <p><", "unexpected `<` in <p>"},
+	} {
+		done := make(chan error, 1)
+		go func() {
+			_, _, err := RewriteTags("f.gsx", []byte(tt.src))
+			done <- err
+		}()
+
+		select {
+		case err := <-done:
+			if err == nil {
+				t.Errorf("%q: want error", tt.src)
+				continue
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("%q: error = %q, want it to contain %q", tt.src, err.Error(), tt.want)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("%q: parser hung", tt.src)
+		}
+	}
+}
+
+// The escape hatches the error points at have to actually work.
+func TestLiteralLessThanEscapes(t *testing.T) {
+	_, tags, err := RewriteTags("f.gsx", []byte("package p\nvar x = <p>a &lt; b</p>\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	el := tags[0].Node.(ast.Element)
+	if got := el.Children[0].(ast.Text).Value; got != "a < b" {
+		t.Errorf("text = %q, want %q", got, "a < b")
+	}
+
+	if _, _, err := RewriteTags("f.gsx", []byte("package p\nvar x = <p>{\"<\"}</p>\n")); err != nil {
+		t.Errorf("{\"<\"} splice: %v", err)
 	}
 }
 

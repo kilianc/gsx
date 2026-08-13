@@ -646,7 +646,7 @@ func (s *state) rewriteClientToGopls(raw []byte) ([]byte, error) {
 			return raw, nil
 		}
 
-		goSrc, sm, err := compile.CompileFileForLSP(uriToPath(p.TextDocument.URI), []byte(p.TextDocument.Text))
+		goSrc, sm, err := safeCompile(uriToPath(p.TextDocument.URI), []byte(p.TextDocument.Text))
 		if err != nil {
 			goSrc = []byte("package " + packageNameOf(p.TextDocument.Text) + "\n")
 			sm = nil
@@ -697,7 +697,7 @@ func (s *state) rewriteClientToGopls(raw []byte) ([]byte, error) {
 		// VS Code usually sends full sync for these setups; if not, we still treat first change as full text.
 		newText := p.ContentChanges[len(p.ContentChanges)-1].Text
 
-		goSrc, sm, err := compile.CompileFileForLSP(uriToPath(p.TextDocument.URI), []byte(newText))
+		goSrc, sm, err := safeCompile(uriToPath(p.TextDocument.URI), []byte(newText))
 		if err != nil {
 			s.setGSXDiagnostics(p.TextDocument.URI, gsxDiagnostic(err))
 			d := s.getDoc(p.TextDocument.URI)

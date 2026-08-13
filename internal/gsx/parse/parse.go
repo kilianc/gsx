@@ -43,7 +43,13 @@ func RewriteTags(path string, src []byte) ([]byte, []Tag, error) {
 	var out strings.Builder
 	var tags []Tag
 
+	prev := -1
 	for !p.s.eof() {
+		if p.s.i == prev {
+			return nil, nil, p.stalled("RewriteTags")
+		}
+		prev = p.s.i
+
 		if p.skipNonCode(&out) {
 			continue
 		}
@@ -73,6 +79,19 @@ func RewriteTags(path string, src []byte) ([]byte, []Tag, error) {
 	}
 
 	return []byte(out.String()), tags, nil
+}
+
+// stalled builds the error for a parse loop that completed a pass without
+// consuming a byte.
+//
+// It should be unreachable: every loop below either consumes input or returns.
+// Reaching it means a bug in the parser, and the whole point of checking is
+// what that bug looks like from the outside. A pass that consumes nothing
+// repeats forever on the same byte, so the symptom is not a crash or a bad
+// parse — it is a process spinning at 100% CPU with no output, which is far
+// harder to trace back here than a diagnostic naming the file and offset.
+func (p *parser) stalled(where string) *Error {
+	return p.errorf(p.s.i, "internal error: %s consumed no input here; this is a bug in gsx, please report it", where)
 }
 
 // skipNonCode copies a comment or Go literal through verbatim, so that a `<`
@@ -204,7 +223,13 @@ func (p *parser) parseTag() (ast.Node, error) {
 
 // parseAttrs consumes everything from after the tag name through `>` or `/>`.
 func (p *parser) parseAttrs(tag string, tagPos int) (attrs []ast.Attr, selfClosing bool, err error) {
+	prev := -1
 	for {
+		if p.s.i == prev {
+			return nil, false, p.stalled("parseAttrs")
+		}
+		prev = p.s.i
+
 		p.s.skipSpace()
 
 		if p.s.eof() {
@@ -312,7 +337,13 @@ func (p *parser) parseAttr(tag string) (ast.Attr, error) {
 func (p *parser) parseChildren(tag string, tagPos int) ([]ast.Node, error) {
 	var kids []ast.Node
 
+	prev := -1
 	for {
+		if p.s.i == prev {
+			return nil, p.stalled("parseChildren")
+		}
+		prev = p.s.i
+
 		if p.s.eof() {
 			return nil, p.errorf(tagPos, "unclosed %s: reached end of file without a matching %s", openName(tag), closeName(tag))
 		}
@@ -360,6 +391,15 @@ func (p *parser) parseChildren(tag string, tagPos int) ([]ast.Node, error) {
 			continue
 		}
 
+		// A `<` reaching this point opens no tag, no fragment and no closing tag,
+		// so it is a stray one — `a < b` written as markup rather than as Go. JSX
+		// rejects it for the same reason, and rejecting it here is what keeps the
+		// text run below, which stops at `<`, from consuming nothing and looping
+		// forever.
+		if p.s.peek() == '<' {
+			return nil, p.errorf(p.s.i, "unexpected `<` in %s: write `&lt;` or `{\"<\"}` for a literal `<`", openName(tag))
+		}
+
 		pos := p.s.i
 		for !p.s.eof() && p.s.peek() != '<' && p.s.peek() != '{' {
 			p.s.next()
@@ -400,7 +440,13 @@ func (p *parser) readBracedExpr() (string, map[string]ast.Node, error) {
 	var nested map[string]ast.Node
 	depth := 1
 
+	prev := -1
 	for !p.s.eof() {
+		if p.s.i == prev {
+			return "", nil, p.stalled("readBracedExpr")
+		}
+		prev = p.s.i
+
 		if p.skipNonCode(&out) {
 			continue
 		}

@@ -250,6 +250,7 @@ The JSX surface, with Go inside the braces:
 | Spread | `<span {...attrs}>` |
 | Conditional attributes | `<input disabled={locked} />` |
 | Entities | `&amp;`, `&#65;`, `&eacute;` decoded at compile time |
+| Literal `<` | `&lt;` or `{"<"}` — a bare `<` in text is a parse error, as in JSX |
 
 Text follows JSX's whitespace rules, so indented markup renders the way it reads.
 
