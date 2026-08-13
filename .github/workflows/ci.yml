@@ -47,8 +47,14 @@ jobs:
           go generate ./...
           git diff --exit-code -- '*_tables.go' 'internal/gsx/playground/symbols'
 
+      # -race, because the LSP proxy is concurrent by construction: it pumps
+      # messages on one goroutine, answers some itself, and runs compiling and
+      # formatting under a watchdog that abandons work it cannot stop. The
+      # detector already caught one real bug there — an abandoned goroutine
+      # still reading a package variable the caller had moved on from — which a
+      # passing suite reported as green. It costs about three seconds.
       - name: Test
-        run: go test ./...
+        run: go test -race ./...
 
       # A parse loop that consumes nothing spins forever rather than failing, so
       # it cannot be caught by asserting on output — the symptom is a wedged
