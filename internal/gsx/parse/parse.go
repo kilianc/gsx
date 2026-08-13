@@ -47,7 +47,7 @@ func RewriteTags(path string, src []byte) ([]byte, []Tag, error) {
 		if p.skipNonCode(&out) {
 			continue
 		}
-		if p.atTagStart() {
+		if p.atGoTagStart() {
 			srcStart := p.s.i
 			node, err := p.parseTag()
 			if err != nil {
@@ -98,17 +98,69 @@ func (p *parser) skipNonCode(out *strings.Builder) bool {
 	return true
 }
 
-// atTagStart reports whether the cursor sits on the `<` of a tag expression.
+// atTagStart reports whether the cursor sits on the `<` of a tag expression in
+// child position, where the surrounding text is markup and every `<` opens a
+// tag or a close tag.
 //
-// A tag is `<name` or the fragment opener `<>`. Neither `<>` nor `<` followed
-// by a letter can begin a valid Go expression at a point where a tag is
-// allowed, so this never misfires on comparison or receive operators.
+// A tag is `<name` or the fragment opener `<>`. In Go code use atGoTagStart
+// instead: there `<` is usually an operator, and only the token before it says
+// which.
 func (p *parser) atTagStart() bool {
 	if p.s.peek() != '<' {
 		return false
 	}
 	b := p.s.peekN(1)
 	return isTagStart(b) || b == '>'
+}
+
+// atGoTagStart reports whether the cursor sits on the `<` of a tag expression
+// in Go code — at the top level of the file, or inside a `{...}` splice.
+//
+// There `<` is far more often an operator than a tag: `a<b` and `a<<b` are
+// valid Go, and both scan as `<b`. What separates the two is position. A tag
+// can only appear where an operand can start, whereas `<` and `<<` must follow
+// one, so the preceding token decides — an identifier, a number, a literal or a
+// closing bracket ends an operand and rules the tag out.
+//
+// The check reads the raw bytes before the cursor, so a comment sitting between
+// the operand and the `<` (`{a /* note */ <b}`) still fools it. Adding spaces
+// around the operator is the workaround for that residue.
+func (p *parser) atGoTagStart() bool {
+	return p.atTagStart() && !endsOperand(p.s.prevToken())
+}
+
+// endsOperand reports whether tok closes an operand, making a `<` right after
+// it a comparison or a shift rather than a tag.
+func endsOperand(tok string) bool {
+	if tok == "" {
+		return false // start of file: nothing to compare against
+	}
+	if isWordByte(tok[0]) {
+		// A keyword is punctuation, not a value: `return <div>` is a tag, while
+		// `count<max` is a comparison.
+		return !goExprKeywords[tok]
+	}
+	switch tok {
+	case ")", "]", "}", `"`, "'", "`":
+		return true
+	case "<":
+		return true // the tail of a `<<` shift, which scans as `<` then `<b`
+	}
+	return false
+}
+
+// goExprKeywords are the Go keywords an expression can directly follow. Every
+// other word is an operand — a variable, a field, a number.
+var goExprKeywords = map[string]bool{
+	"return": true,
+	"case":   true,
+	"else":   true,
+	"if":     true,
+	"for":    true,
+	"switch": true,
+	"range":  true,
+	"go":     true,
+	"defer":  true,
 }
 
 // parseTag parses a single element or fragment starting at '<'.
@@ -352,7 +404,7 @@ func (p *parser) readBracedExpr() (string, map[string]ast.Node, error) {
 		if p.skipNonCode(&out) {
 			continue
 		}
-		if p.atTagStart() {
+		if p.atGoTagStart() {
 			node, err := p.parseTag()
 			if err != nil {
 				return "", nil, err
