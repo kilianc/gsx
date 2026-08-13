@@ -347,6 +347,126 @@ func TestFragmentDetectionDoesNotBreakGo(t *testing.T) {
 	}
 }
 
+// Go lets a comparison be written without spaces, so `a<b` — inside a splice
+// or in ordinary Go code — must not scan as the start of a `<b>` tag.
+func TestUnspacedComparisonsAreNotTags(t *testing.T) {
+	for _, src := range []string{
+		"package p\nvar ok = a<b\n",
+		"package p\nvar y = a<<b\n",
+		"package p\nvar y = 1<n\n",
+		"package p\nfunc f() { for i := 0; i<n; i++ {} }\n",
+		"package p\nfunc f() { _ = f(x)<y }\n",
+		"package p\nfunc f() { _ = xs[0]<y }\n",
+		"package p\nfunc f() { _ = T{}<y }\n",
+		`package p` + "\n" + `func f() { _ = len("s")<n }` + "\n",
+	} {
+		out, tags, err := RewriteTags("f.gsx", []byte(src))
+		if err != nil {
+			t.Errorf("%s: %v", src, err)
+			continue
+		}
+		if len(tags) != 0 || string(out) != src {
+			t.Errorf("%s: rewritten to %q with %d tags", src, out, len(tags))
+		}
+	}
+}
+
+// The same, one level in: a comparison inside a `{...}` splice belongs to the
+// spliced Go expression, not to the markup around it.
+func TestUnspacedComparisonInSplice(t *testing.T) {
+	for _, tt := range []struct {
+		src  string
+		want string
+	}{
+		{"package p\nvar x = <p class={m[a<b]}>hi</p>\n", "m[a<b]"},
+		{"package p\nvar x = <p>{a<b}</p>\n", "a<b"},
+		{"package p\nvar x = <p>{If(i<n, y)}</p>\n", "If(i<n, y)"},
+		{"package p\nvar x = <p>{f(a<<b)}</p>\n", "f(a<<b)"},
+	} {
+		_, tags, err := RewriteTags("f.gsx", []byte(tt.src))
+		if err != nil {
+			t.Errorf("%s: %v", tt.src, err)
+			continue
+		}
+		el := tags[0].Node.(ast.Element)
+
+		var got string
+		if len(el.Attrs) > 0 {
+			got = el.Attrs[0].Value
+		} else {
+			got = el.Children[0].(ast.Expr).Src
+		}
+		if got != tt.want {
+			t.Errorf("%s: expr = %q, want %q", tt.src, got, tt.want)
+		}
+	}
+}
+
+// Tightening tag detection must not lose the positions where a tag really can
+// begin: after a keyword, an operator, or an opening bracket.
+func TestTagsStillParseInOperandPositions(t *testing.T) {
+	for _, tt := range []struct {
+		src  string
+		want int
+	}{
+		{"package p\nfunc F() Node { return <p/> }\n", 1},
+		{"package p\nvar x = <p/>\n", 1},
+		{"package p\nvar x = []Node{<p/>, <b/>}\n", 2},
+		{"package p\nvar x = f(<p/>)\n", 1},
+		{"package p\nvar x = <div>{ok && <p/>}</div>\n", 1},
+		{"package p\nvar x = <div>{func() Node { return <p/> }()}</div>\n", 1},
+		{"package p\nvar x = <div>{[]Node{<p/>}}</div>\n", 1},
+		{"package p\nvar x = <>a</>\n", 1},
+	} {
+		_, tags, err := RewriteTags("f.gsx", []byte(tt.src))
+		if err != nil {
+			t.Errorf("%s: %v", tt.src, err)
+			continue
+		}
+		if len(tags) != tt.want {
+			t.Errorf("%s: got %d tags, want %d", tt.src, len(tags), tt.want)
+		}
+	}
+}
+
+// Child position is markup, not Go: there a `<` after text still opens a tag.
+func TestChildPositionStillTreatsAngleAsTag(t *testing.T) {
+	_, tags, err := RewriteTags("f.gsx", []byte("package p\nvar x = <p>a<b>c</b></p>\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	el := tags[0].Node.(ast.Element)
+	if len(el.Children) != 2 {
+		t.Fatalf("got %d children, want 2", len(el.Children))
+	}
+	if got := el.Children[1].(ast.Element).Tag; got != "b" {
+		t.Errorf("child 1 tag = %q, want %q", got, "b")
+	}
+}
+
+func TestPrevToken(t *testing.T) {
+	for _, tt := range []struct {
+		src  string // the cursor sits at the end of src
+		want string
+	}{
+		{"", ""},
+		{"  \n\t", ""},
+		{"foo", "foo"},
+		{"a.foo", "foo"},
+		{"x1_", "x1_"},
+		{"42", "42"},
+		{"f(x)", ")"},
+		{"m[a]", "]"},
+		{"a <", "<"},
+		{"return  ", "return"},
+	} {
+		s := &scanner{src: []byte(tt.src), i: len(tt.src)}
+		if got := s.prevToken(); got != tt.want {
+			t.Errorf("prevToken(%q) = %q, want %q", tt.src, got, tt.want)
+		}
+	}
+}
+
 func TestJSXCommentsAreDropped(t *testing.T) {
 	_, tags, err := RewriteTags("f.gsx", []byte(
 		"package p\nfunc F() Node { return <div {/* attr note */} class=\"c\">{/* child note */}<p>a</p></div> }\n"))

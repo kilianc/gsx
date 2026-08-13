@@ -105,14 +105,42 @@ func (s *scanner) readRawString() string {
 }
 
 func (s *scanner) skipSpace() {
-	for {
-		switch s.peek() {
-		case ' ', '\t', '\n', '\r':
-			s.next()
-		default:
-			return
-		}
+	for isSpace(s.peek()) {
+		s.next()
 	}
+}
+
+// prevToken returns the token immediately before the cursor, skipping spaces:
+// a whole identifier or number if the preceding byte is a word byte, and
+// otherwise that single byte on its own. It returns "" at the start of input.
+//
+// This is the one place the scanner looks backwards. It exists so tag detection
+// can tell an operator from an operand without lexing Go — see atGoTagStart.
+func (s *scanner) prevToken() string {
+	j := s.i - 1
+	for j >= 0 && isSpace(s.src[j]) {
+		j--
+	}
+	if j < 0 {
+		return ""
+	}
+	if !isWordByte(s.src[j]) {
+		return string(s.src[j])
+	}
+	end := j + 1
+	for j >= 0 && isWordByte(s.src[j]) {
+		j--
+	}
+	return string(s.src[j+1 : end])
+}
+
+func isSpace(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
+}
+
+func isWordByte(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') ||
+		(b >= '0' && b <= '9') || b == '_'
 }
 
 func isTagStart(b byte) bool {
