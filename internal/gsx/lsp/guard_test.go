@@ -6,25 +6,21 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/kilianc/gsx/internal/gsx/compile"
 )
 
-// The case that cost 33 hours of CPU: a compiler that never returns must not
-// take the proxy's message pump with it.
-func TestSafeCompileSurvivesAHang(t *testing.T) {
+// The case that cost 33 hours of CPU: work that never returns must not take the
+// proxy's message pump with it.
+func TestRunGuardedSurvivesAHang(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)
 
-	hang := func(string, []byte) ([]byte, *compile.SourceMap, error) {
-		<-release
-		return nil, nil, nil
-	}
-
 	start := time.Now()
-	_, _, err := safeCompileWithin(hang, "page.gsx", nil, 50*time.Millisecond)
+	_, err := runGuarded("compiling page.gsx", 50*time.Millisecond, func() (int, error) {
+		<-release
+		return 0, nil
+	})
 	if err == nil {
-		t.Fatal("want an error when the compiler hangs")
+		t.Fatal("want an error when the work hangs")
 	}
 	if !strings.Contains(err.Error(), "did not finish") {
 		t.Errorf("error = %q, want it to mention the budget", err)
@@ -34,52 +30,90 @@ func TestSafeCompileSurvivesAHang(t *testing.T) {
 	}
 }
 
-// A panic in the compiler would otherwise unwind through the pump goroutine and
-// kill the whole LSP session.
-func TestSafeCompileSurvivesAPanic(t *testing.T) {
-	boom := func(string, []byte) ([]byte, *compile.SourceMap, error) {
+// A panic would otherwise unwind through the pump goroutine and kill the whole
+// LSP session.
+func TestRunGuardedSurvivesAPanic(t *testing.T) {
+	_, err := runGuarded("compiling page.gsx", time.Second, func() (int, error) {
 		panic("boom")
-	}
-
-	_, _, err := safeCompileWithin(boom, "page.gsx", nil, time.Second)
+	})
 	if err == nil {
-		t.Fatal("want an error when the compiler panics")
+		t.Fatal("want an error when the work panics")
 	}
 	if !strings.Contains(err.Error(), "panicked") {
 		t.Errorf("error = %q, want it to mention the panic", err)
 	}
 }
 
-// The guardrail must be invisible on the happy path.
-func TestSafeCompilePassesResultsThrough(t *testing.T) {
-	want := []byte("package p\n")
-	ok := func(string, []byte) ([]byte, *compile.SourceMap, error) {
-		return want, nil, nil
-	}
-	got, _, err := safeCompileWithin(ok, "page.gsx", nil, time.Second)
+// The guard must be invisible on the happy path, and must not reshape a real
+// error into an internal one — a parse error still has to reach the caller so
+// it can be shown as a diagnostic.
+func TestRunGuardedPassesResultsThrough(t *testing.T) {
+	got, err := runGuarded("x", time.Second, func() (string, error) {
+		return "value", nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != string(want) {
-		t.Errorf("goSrc = %q, want %q", got, want)
+	if got != "value" {
+		t.Errorf("got %q, want %q", got, "value")
 	}
 
-	// A normal parse error still has to reach the caller unchanged, so it can be
-	// shown as a diagnostic rather than swallowed as an internal failure.
 	sentinel := errors.New("page.gsx:2:14: unexpected `<` in <p>")
-	failing := func(string, []byte) ([]byte, *compile.SourceMap, error) {
-		return nil, nil, sentinel
+	if _, err := runGuarded("x", time.Second, func() (string, error) {
+		return "", sentinel
+	}); !errors.Is(err, sentinel) {
+		t.Errorf("error = %v, want the caller's own error", err)
 	}
-	if _, _, err := safeCompileWithin(failing, "page.gsx", nil, time.Second); !errors.Is(err, sentinel) {
-		t.Errorf("error = %v, want the compiler's own error", err)
+}
+
+// Both entry points must actually work through the guard.
+func TestSafeCompileAndFormatRealWork(t *testing.T) {
+	src := []byte("package p\n\nfunc F() Node { return <p>hi</p> }\n")
+
+	goSrc, _, err := safeCompile("page.gsx", src)
+	if err != nil {
+		t.Fatalf("safeCompile: %v", err)
+	}
+	if !strings.Contains(string(goSrc), "package p") {
+		t.Errorf("goSrc = %q", goSrc)
+	}
+
+	out, err := safeFormat("page.gsx", src)
+	if err != nil {
+		t.Fatalf("safeFormat: %v", err)
+	}
+	if !strings.Contains(string(out), "<p>hi</p>") {
+		t.Errorf("formatted = %q", out)
+	}
+}
+
+// Formatting runs the same parser on the same goroutine as compiling, so the
+// buffer that wedged a session has to be survivable through this door too.
+func TestSafeFormatRejectsAStrayLessThan(t *testing.T) {
+	done := make(chan error, 1)
+	go func() {
+		_, err := safeFormat("page.gsx", []byte("package p\n\nfunc F() Node { return <p>a < b</p> }\n"))
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("want an error for a stray `<`")
+		}
+		if !strings.Contains(err.Error(), "unexpected `<`") {
+			t.Errorf("error = %q, want the parse error", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("formatting hung on a stray `<`")
 	}
 }
 
 // The whole failure, driven through the proxy the way an editor drives it.
 //
-// The unit tests above cover the parser and the watchdog separately; this is
-// the seam that actually broke. A buffer containing a stray `<` — which is what
-// a half-typed tag looks like between two keystrokes — has to come back, be
+// The unit tests above cover the parser and the guard separately; this is the
+// seam that actually broke. A buffer containing a stray `<` — which is what a
+// half-typed tag looks like between two keystrokes — has to come back, be
 // reported as a diagnostic, and leave the pump able to handle the next message.
 // Before the fix this call never returned, and every message behind it in the
 // queue was never forwarded to gopls again.
@@ -176,16 +210,5 @@ func TestProxySurvivesAStrayLessThanInTheBuffer(t *testing.T) {
 	})
 	if _, err := st.rewriteClientToGopls(next); err != nil {
 		t.Fatalf("proxy did not survive: %v", err)
-	}
-}
-
-// The real compiler must still work through the wrapper.
-func TestSafeCompileRealCompiler(t *testing.T) {
-	goSrc, _, err := safeCompile("page.gsx", []byte("package p\n\nfunc F() Node { return <p>hi</p> }\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(goSrc), "package p") {
-		t.Errorf("goSrc = %q", goSrc)
 	}
 }
