@@ -17,8 +17,8 @@ check: ## Fail if any checked-in generated file is out of date, or any source is
 	git diff --exit-code -- '*_tables.go' 'internal/gsx/playground/symbols'
 
 .PHONY: test
-test: ## Run the full test suite
-	go test ./...
+test: ## Run the full test suite, with the race detector as CI does
+	go test -race ./...
 
 .PHONY: fuzz
 fuzz: ## Hunt for input the parser cannot make progress on (FUZZTIME=2m make fuzz)
