@@ -100,7 +100,7 @@ func (l *lexer) lexGo() {
 			l.emit(l.quoted('\''), ClassString)
 		case l.peek(0) == '`':
 			l.emit(l.untilAfter("`", 1), ClassString)
-		case l.peek(0) == '<' && (isNameStart(l.peek(1)) || l.peek(1) == '>'):
+		case l.atGoTagStart():
 			l.lexTag()
 		case isDigit(l.peek(0)) && !isNameByte(l.prevByte()):
 			l.emit(l.span(isNumByte), ClassNumber)
@@ -111,6 +111,84 @@ func (l *lexer) lexGo() {
 			l.emit(1, ClassNone)
 		}
 	}
+}
+
+// atTagStart reports whether the cursor sits on the `<` of a tag in child
+// position, where the surrounding text is markup and every `<` opens a tag or
+// a close tag. In Go code use atGoTagStart.
+func (l *lexer) atTagStart() bool {
+	return l.peek(0) == '<' && (isNameStart(l.peek(1)) || l.peek(1) == '>')
+}
+
+// atGoTagStart is atTagStart for Go code — the top level of a snippet, or the
+// inside of a `{...}` splice — where `<` is more often an operator than a tag.
+//
+// It ports parse.atGoTagStart byte for byte, including its residue: the check
+// reads the raw bytes before the cursor, so a comment between the operand and
+// the `<` (`{a /* note */ <b}`) fools it into seeing a tag. Divergence here
+// would be worse than that residue. Colouring `a<b` as markup where the
+// compiler reads a comparison teaches the syntax wrong, and colouring the
+// residue as a comparison hides why the file will not build.
+func (l *lexer) atGoTagStart() bool {
+	return l.atTagStart() && !endsOperand(l.prevToken())
+}
+
+// prevToken returns the token immediately before the cursor, skipping spaces: a
+// whole identifier or number if the preceding byte is a word byte, and
+// otherwise that single byte on its own. It returns "" at the start of input.
+//
+// It reads the source rather than the tokens already emitted, so that it stays
+// the same rule as the scanner's — see parse.scanner.prevToken.
+func (l *lexer) prevToken() string {
+	j := l.i - 1
+	for j >= 0 && isSpace(l.src[j]) {
+		j--
+	}
+	if j < 0 {
+		return ""
+	}
+	if !isNameByte(l.src[j]) {
+		return l.src[j : j+1]
+	}
+	end := j + 1
+	for j >= 0 && isNameByte(l.src[j]) {
+		j--
+	}
+	return l.src[j+1 : end]
+}
+
+// endsOperand reports whether tok closes an operand, making a `<` right after
+// it a comparison or a shift rather than a tag. It mirrors parse.endsOperand.
+func endsOperand(tok string) bool {
+	if tok == "" {
+		return false // start of input: nothing to compare against
+	}
+	if isNameByte(tok[0]) {
+		// A keyword is punctuation, not a value: `return <div>` is a tag, while
+		// `count<max` is a comparison.
+		return !goExprKeywords[tok]
+	}
+	switch tok {
+	case ")", "]", "}", `"`, "'", "`":
+		return true
+	case "<":
+		return true // the tail of a `<<` shift, which scans as `<` then `<b`
+	}
+	return false
+}
+
+// goExprKeywords are the Go keywords an expression can directly follow. Every
+// other word is an operand — a variable, a field, a number.
+var goExprKeywords = map[string]bool{
+	"return": true,
+	"case":   true,
+	"else":   true,
+	"if":     true,
+	"for":    true,
+	"switch": true,
+	"range":  true,
+	"go":     true,
+	"defer":  true,
 }
 
 // lexTag scans a tag expression: the name, its attributes, and its children,
@@ -163,7 +241,7 @@ func (l *lexer) lexChildren() {
 				l.emit(1, ClassTag)
 			}
 			return
-		case l.peek(0) == '<' && (isNameStart(l.peek(1)) || l.peek(1) == '>'):
+		case l.atTagStart():
 			l.lexTag()
 		case l.peek(0) == '{':
 			l.lexSplice()
@@ -196,7 +274,7 @@ func (l *lexer) lexSplice() {
 			l.emit(l.quoted('\''), ClassString)
 		case l.peek(0) == '`':
 			l.emit(l.untilAfter("`", 1), ClassString)
-		case l.peek(0) == '<' && (isNameStart(l.peek(1)) || l.peek(1) == '>'):
+		case l.atGoTagStart():
 			l.lexTag()
 		case l.peek(0) == '{':
 			depth++
