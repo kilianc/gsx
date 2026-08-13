@@ -13,7 +13,6 @@ import (
 	"sync"
 
 	"github.com/kilianc/gsx/internal/gsx/compile"
-	gsxformat "github.com/kilianc/gsx/internal/gsx/format"
 	"github.com/kilianc/gsx/internal/gsx/parse"
 )
 
@@ -537,7 +536,7 @@ func formattingResponse(id any, d *docState) []byte {
 	result := any(nil)
 
 	if d != nil {
-		if out, err := gsxformat.Source(uriToPath(d.gsxURI), []byte(d.gsxText)); err == nil {
+		if out, err := safeFormat(uriToPath(d.gsxURI), []byte(d.gsxText)); err == nil {
 			if string(out) != d.gsxText {
 				lines := strings.Count(d.gsxText, "\n") + 1
 				result = []any{map[string]any{

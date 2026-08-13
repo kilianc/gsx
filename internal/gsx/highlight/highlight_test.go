@@ -1,8 +1,11 @@
 package highlight
 
 import (
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/kilianc/gsx/internal/gsx/parse"
 )
 
 // Every byte of the input must appear in exactly one token, or the rendered
@@ -13,6 +16,9 @@ func TestTokensAreLossless(t *testing.T) {
 		"// comment\nvar s = `raw\nstring`\n",
 		`<>{/* frag */}<p>hi</p></>`,
 		`a < b && c > d`,
+		`a<b`,
+		`a<<b`,
+		`<p class={m[a<b]}>hi</p>`,
 		`x := 'q'; y := "\"esc\""`,
 		"",
 		"<",
@@ -121,6 +127,74 @@ func TestComparisonIsNotATag(t *testing.T) {
 			}
 		}
 	}
+}
+
+// The highlighter carries its own lexer, so its rule for telling a tag from a
+// comparison can drift from the parser's — and silently, since nothing renders
+// the two side by side. This pins both halves: the tokens emitted, and
+// agreement with parse on whether there is a tag there at all.
+func TestGoCodeTagDetection(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string // every token classified as a tag, in order
+	}{
+		// A `<` after an operand is a comparison or a shift.
+		{"comparison", `a<b`, nil},
+		{"shift", `a<<b`, nil},
+		{"shift assignment", `a<<=b`, nil},
+		{"loop condition", `for i := 0; i<n; i++ {}`, nil},
+		{"after a call", `f(x)<y`, nil},
+		{"after an index", `arr[i]<n`, nil},
+		{"after a literal", `"s"<t`, nil},
+
+		// A `<` after an operator, a keyword or nothing at all is a tag.
+		{"start of input", `<div/>`, []string{"<div/>"}},
+		{"after return", `return <div/>`, []string{"<div/>"}},
+		{"after assignment", `x:=<div/>`, []string{"<div/>"}},
+		{"after an open paren", `f(<div/>)`, []string{"<div/>"}},
+		{"in a composite literal", `[]Node{<div/>}`, []string{"<div/>"}},
+		{"after &&", `ok && <div/>`, []string{"<div/>"}},
+		{"fragment after return", `return <></>`, []string{"<></>"}},
+
+		// Both rules meet inside one attribute splice: the splice is Go, the
+		// tag around it is markup.
+		{"comparison inside an attribute", `<p class={m[a<b]}>hi</p>`, []string{"<p", ">", "</p>"}},
+
+		// Child position keeps the loose rule, where a `<` can only be markup.
+		{"child position", `<p>a<b>c</b></p>`, []string{"<p>", "<b>", "</b></p>"}},
+
+		// parse reads the raw bytes before the `<`, so a comment wedged between
+		// the operand and the operator reads as a tag there. Colouring it as a
+		// comparison here would hide why the file does not build.
+		{"comment before the operator", `a /* c */ <b`, []string{"<b"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []string
+			for _, tok := range Tokens(tt.src) {
+				if tok.Class == ClassTag {
+					got = append(got, tok.Text)
+				}
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("%q: tag tokens = %q, want %q", tt.src, got, tt.want)
+			}
+			if want := len(tt.want) > 0; parseSeesTag(tt.src) != want {
+				t.Errorf("%q: parse sees a tag = %v, highlight = %v; the two must agree",
+					tt.src, !want, want)
+			}
+		})
+	}
+}
+
+// parseSeesTag reports whether the parser reads a tag in src: either it pulled
+// one out, or it failed trying. The sources above are otherwise well formed, so
+// an error can only come from tag parsing.
+func parseSeesTag(src string) bool {
+	_, tags, err := parse.RewriteTags("snippet.gsx", []byte(src))
+	return len(tags) > 0 || err != nil
 }
 
 func TestHTMLEscapes(t *testing.T) {
