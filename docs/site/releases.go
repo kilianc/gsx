@@ -40,6 +40,81 @@ type Change struct {
 func Releases() []Release {
 	return []Release{
 		{
+			Version:  "v0.3.1",
+			Date:     "2026-08-13",
+			Previous: "v0.3.0",
+			Summary: "Correctness in the parser, the highlighter and the language server. A `<` in Go code " +
+				"is now read the way Go reads it, and a `<` that cannot start a tag is a diagnostic rather " +
+				"than a hang. Nothing in the language changed and every generated file in this repository " +
+				"is byte-identical, so upgrading is the install and nothing else.",
+			Changes: []Change{{
+				Title: "A `<` in Go code is read by the token before it",
+				Refs:  []int{41, 46},
+				Body: []string{
+					"Tag detection asked one question — is this `<` followed by a letter — and that question is " +
+						"only sound in child position. Go does not require spaces around a comparison, so in Go " +
+						"code the answer was often yes for one: `m[a<b]` inside a splice failed with an error " +
+						"naming a tag nobody wrote, and `var ok = a<b`, `a<<b` and the `i<n` of an ordinary `for` " +
+						"header failed the same way.",
+					"What separates a tag from an operator is position, not the byte after the `<`. A tag can " +
+						"only start where an operand can start, whereas `<` and `<<` must follow one, so the " +
+						"scanner now looks at the token it just passed. It records that token going forward as " +
+						"each one is consumed, which is what lets a comment between the operand and the operator " +
+						"— `{a /* note */ <b}` — stop hiding it.",
+				},
+			}, {
+				Title: "A stray `<` in text is an error, not a hang",
+				Refs:  []int{40},
+				Body: []string{
+					"`<p>a < b</p>` was enough. The `<` matched none of the shapes the child parser dispatches " +
+						"on, and the text run it fell through to stopped on the `<` without consuming it: zero " +
+						"bytes read, loop repeats, forever. The language server compiles the editor buffer on " +
+						"every keystroke, so the input only had to exist between two keystrokes — one `gsx lsp` " +
+						"session spun on such an intermediate state for 33 hours at 100% of a core, forwarding " +
+						"nothing to gopls the whole time.",
+					"It is now rejected the way JSX rejects it, pointing at the escapes the language reference " +
+						"already teaches. Every parse loop asserts that a pass consumes at least one byte, so a " +
+						"future stall is a diagnostic naming the file and column rather than a wedged process, " +
+						"and a fuzz target hunts specifically for input that would trip it.",
+				},
+			}, {
+				Title: "The highlighter reads `<` the way the parser does",
+				Refs:  []int{44},
+				Body: []string{
+					"The highlighter carries its own lexer, which kept the old rule after the parser learned the " +
+						"new one. `a<b`, `a<<b` and the `i<n` of a `for` header still coloured as if `<b` opened a " +
+						"tag, and a snippet that reads as markup where the compiler reads a comparison teaches the " +
+						"syntax wrong. A test now asks the parser the same question about the same source, so the " +
+						"next drift fails there rather than in a rendered page.",
+				},
+			}, {
+				Title: "The language server guards formatting like it guards compiling",
+				Refs:  []int{43},
+				Body: []string{
+					"`textDocument/formatting` called the formatter directly, on the goroutine that pumps every " +
+						"client message to gopls — the same wedge the compile watchdog exists to contain, reached " +
+						"through a different door. Guarding two of the three ways into the parser and leaving the " +
+						"third open is not a guardrail, so both now run under one guard.",
+				},
+			}, {
+				Title: "The test suite runs under the race detector",
+				Refs:  []int{45},
+				Body: []string{
+					"The language server proxy is concurrent by construction, and the detector has already " +
+						"earned it: while the watchdog was being written it caught an abandoned goroutine still " +
+						"reading a variable its caller had moved on from, in a suite that reported green without " +
+						"it. Three seconds on this suite.",
+				},
+			}, {
+				Title: "The site lists its releases",
+				Refs:  []int{47},
+				Body: []string{
+					"This page. It carries the history and, above it, whatever is merged into main that no tag " +
+						"carries yet — which is the one thing a releases list on GitHub structurally cannot show.",
+				},
+			}},
+		},
+		{
 			Version:  "v0.3.0",
 			Date:     "2026-08-12",
 			Previous: "v0.2.0",
@@ -144,63 +219,11 @@ func Releases() []Release {
 // Unreleased are the changes on main that no tag carries yet.
 //
 // This site deploys from main, so it is also the honest answer to what an
-// install from `@main` gets that an install from `@latest` does not.
+// install from `@main` gets that an install from `@latest` does not. Empty is
+// the normal state immediately after a release: the page drops the section and
+// its jump-list entry rather than claiming there is nothing worth shipping.
 func Unreleased() []Change {
-	return []Change{{
-		Title: "A `<` in Go code is read by the token before it",
-		Refs:  []int{41, 46},
-		Body: []string{
-			"Tag detection asked one question — is this `<` followed by a letter — and that question is only " +
-				"sound in child position. Go does not require spaces around a comparison, so in Go code the " +
-				"answer was often yes for one: `m[a<b]` inside a splice failed with an error naming a tag nobody " +
-				"wrote, and `var ok = a<b`, `a<<b` and the `i<n` of an ordinary `for` header failed the same way.",
-			"What separates a tag from an operator is position, not the byte after the `<`. A tag can only start " +
-				"where an operand can start, whereas `<` and `<<` must follow one, so the scanner now looks at the " +
-				"token it just passed. It records that token going forward as each one is consumed, which is what " +
-				"lets a comment between the operand and the operator — `{a /* note */ <b}` — stop hiding it.",
-		},
-	}, {
-		Title: "A stray `<` in text is an error, not a hang",
-		Refs:  []int{40},
-		Body: []string{
-			"`<p>a < b</p>` was enough. The `<` matched none of the shapes the child parser dispatches on, and " +
-				"the text run it fell through to stopped on the `<` without consuming it: zero bytes read, loop " +
-				"repeats, forever. The language server compiles the editor buffer on every keystroke, so the input " +
-				"only had to exist between two keystrokes — one `gsx lsp` session spun on such an intermediate " +
-				"state for 33 hours at 100% of a core, forwarding nothing to gopls the whole time.",
-			"It is now rejected the way JSX rejects it, pointing at the escapes the language reference already " +
-				"teaches. Every parse loop asserts that a pass consumes at least one byte, so a future stall is a " +
-				"diagnostic naming the file and column rather than a wedged process, and a fuzz target hunts " +
-				"specifically for input that would trip it.",
-		},
-	}, {
-		Title: "The highlighter reads `<` the way the parser does",
-		Refs:  []int{44},
-		Body: []string{
-			"The highlighter carries its own lexer, which kept the old rule after the parser learned the new one. " +
-				"`a<b`, `a<<b` and the `i<n` of a `for` header still coloured as if `<b` opened a tag, and a " +
-				"snippet that reads as markup where the compiler reads a comparison teaches the syntax wrong. " +
-				"A test now asks the parser the same question about the same source, so the next drift fails " +
-				"there rather than in a rendered page.",
-		},
-	}, {
-		Title: "The language server guards formatting like it guards compiling",
-		Refs:  []int{43},
-		Body: []string{
-			"`textDocument/formatting` called the formatter directly, on the goroutine that pumps every client " +
-				"message to gopls — the same wedge the compile watchdog exists to contain, reached through a " +
-				"different door. Guarding two of the three ways into the parser and leaving the third open is " +
-				"not a guardrail, so both now run under one guard.",
-		},
-	}, {
-		Title: "The test suite runs under the race detector",
-		Refs:  []int{45},
-		Body: []string{
-			"The language server proxy is concurrent by construction, and the detector has already earned it: " +
-				"while the watchdog was being written it caught an abandoned goroutine still reading a variable " +
-				"its caller had moved on from, in a suite that reported green without it. Three seconds on this suite.",
-		},
-	}}
+	return nil
 }
 
 // Latest is the newest tagged release.
