@@ -78,8 +78,9 @@ func compilePipeline(path string, src []byte) (*compileResult, error) {
 	qualifyHTML := true
 	htmlPrefix := "html"
 
+	varTypesByPh := inferVarTypesFromPlaceholders(af, mapping, funcReturnTypes)
+
 	ctx := gomponents.Context{
-		VarTypes:        inferVarTypesFromPlaceholders(af, mapping, funcReturnTypes),
 		FuncReturnTypes: funcReturnTypes,
 		FuncParams:      funcParams,
 		HTMLPrefix:      htmlPrefix,
@@ -87,6 +88,7 @@ func compilePipeline(path string, src []byte) (*compileResult, error) {
 	}
 
 	for i := range mapping {
+		ctx.VarTypes = varTypesByPh[mapping[i].name]
 		ex, err := gomponents.LowerNodes([]ast.Node{mapping[i].node}, ctx)
 		if err != nil {
 			return nil, err
@@ -318,6 +320,10 @@ func classifyASTReturnType(expr goast.Expr, imports []*goast.ImportSpec) string 
 					}
 				}
 			}
+		}
+	case *goast.ArrayType:
+		if t.Len == nil && classifyASTReturnType(t.Elt, imports) == "Node" {
+			return "[]Node"
 		}
 	}
 	return ""
@@ -553,7 +559,12 @@ func inferRHSType(rhs goast.Expr, phNames map[string]bool, funcReturnTypes map[s
 	return ""
 }
 
-func inferVarTypesFromPlaceholders(f *goast.File, phs []placeholder, funcReturnTypes map[string]string) map[string]string {
+// inferVarTypesFromPlaceholders returns, per placeholder name, the variable
+// types visible at that placeholder: package-level declarations overlaid with
+// the params and locals of the enclosing function. Scoping is per function so
+// that one function's `account string` param cannot re-type another function's
+// `account` Node local.
+func inferVarTypesFromPlaceholders(f *goast.File, phs []placeholder, funcReturnTypes map[string]string) map[string]map[string]string {
 	phNames := map[string]bool{}
 	for _, p := range phs {
 		phNames[p.name] = true
@@ -561,8 +572,7 @@ func inferVarTypesFromPlaceholders(f *goast.File, phs []placeholder, funcReturnT
 
 	structFields := collectStructFields(f)
 
-	out := map[string]string{}
-	goast.Inspect(f, func(n goast.Node) bool {
+	collect := func(n goast.Node, out map[string]string) {
 		switch t := n.(type) {
 		case *goast.FuncDecl:
 			if t.Type != nil && t.Type.Params != nil {
@@ -618,8 +628,48 @@ func inferVarTypesFromPlaceholders(f *goast.File, phs []placeholder, funcReturnT
 				}
 			}
 		}
-		return true
-	})
+	}
+
+	// Package-level declarations are visible in every function.
+	pkgLevel := map[string]string{}
+	for _, decl := range f.Decls {
+		if gd, ok := decl.(*goast.GenDecl); ok {
+			goast.Inspect(gd, func(n goast.Node) bool {
+				collect(n, pkgLevel)
+				return true
+			})
+		}
+	}
+
+	out := map[string]map[string]string{}
+	for _, decl := range f.Decls {
+		fd, ok := decl.(*goast.FuncDecl)
+		if !ok {
+			continue
+		}
+		scoped := map[string]string{}
+		for k, v := range pkgLevel {
+			scoped[k] = v
+		}
+		goast.Inspect(fd, func(n goast.Node) bool {
+			collect(n, scoped)
+			return true
+		})
+		// Every placeholder called inside this function sees its scope.
+		goast.Inspect(fd, func(n goast.Node) bool {
+			if id, ok := n.(*goast.Ident); ok && phNames[id.Name] {
+				out[id.Name] = scoped
+			}
+			return true
+		})
+	}
+	// Placeholders outside any function (package-level var initializers) see
+	// only package-level declarations.
+	for name := range phNames {
+		if out[name] == nil {
+			out[name] = pkgLevel
+		}
+	}
 	return out
 }
 
