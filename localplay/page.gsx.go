@@ -7,11 +7,10 @@ import (
 	"fmt"
 
 	. "maragu.dev/gomponents"
-
-	// ItemsList is a tiny helper so you can test go-to-definition/hover from a .gsx file.
 	html "maragu.dev/gomponents/html"
 )
 
+// ItemsList is a tiny helper so you can test go-to-definition/hover from a .gsx file.
 func ItemsList(lis []Node) Node {
 	return html.Ul(html.Class("items"), Group(lis))
 }
