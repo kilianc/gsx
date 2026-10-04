@@ -5,7 +5,6 @@ package e2e
 
 import (
 	"github.com/kilianc/gsx/e2e/helpers"
-
 	. "maragu.dev/gomponents"
 	html "maragu.dev/gomponents/html"
 )

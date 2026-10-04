@@ -5,7 +5,6 @@ package site
 
 import (
 	. "maragu.dev/gomponents"
-
 	html "maragu.dev/gomponents/html"
 )
 

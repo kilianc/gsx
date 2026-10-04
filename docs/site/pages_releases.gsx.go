@@ -5,12 +5,12 @@ package site
 
 import (
 	"fmt"
-
-	. "maragu.dev/gomponents"
-	html "maragu.dev/gomponents/html"
 	"strconv"
 	"strings"
 	"time"
+
+	. "maragu.dev/gomponents"
+	html "maragu.dev/gomponents/html"
 )
 
 // repo is where the releases, tags and pull requests linked from this page live.

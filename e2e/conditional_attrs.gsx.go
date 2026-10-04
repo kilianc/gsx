@@ -4,11 +4,10 @@
 package e2e
 
 import (
-	. "maragu.dev/gomponents"
-
-	html "maragu.dev/gomponents/html"
-
 	"strconv"
+
+	. "maragu.dev/gomponents"
+	html "maragu.dev/gomponents/html"
 )
 
 func init() {

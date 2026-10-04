@@ -3,16 +3,14 @@
 
 package site
 
-import
-
-// example is what the playground opens with. It is deliberately a little more
-// than "hello": a loop, a conditional and a splice calling into Go are the
-// things a reader is actually trying to find out about.
-(
+import (
 	. "maragu.dev/gomponents"
 	html "maragu.dev/gomponents/html"
 )
 
+// example is what the playground opens with. It is deliberately a little more
+// than "hello": a loop, a conditional and a splice calling into Go are the
+// things a reader is actually trying to find out about.
 const example = `package main
 
 import "fmt"

@@ -4,15 +4,14 @@
 package site
 
 import (
-	"github.com/kilianc/gsx/internal/gsx/highlight"
-
-	. "maragu.dev/gomponents"
-
-	// Page is one documentation page.
-	html "maragu.dev/gomponents/html"
 	"strings"
+
+	"github.com/kilianc/gsx/internal/gsx/highlight"
+	. "maragu.dev/gomponents"
+	html "maragu.dev/gomponents/html"
 )
 
+// Page is one documentation page.
 type Page struct {
 	Slug     string
 	Title    string

@@ -937,11 +937,14 @@ func ensureImports(f *goast.File, phs []placeholder, qualifyHTML bool) {
 
 	// For parenthesized imports, modify the existing decl in place to preserve
 	// its position info, which prevents go/format from displacing nearby comments.
-	var parenImport *goast.GenDecl
+	var parenImport, firstImport *goast.GenDecl
 	var newDecls []goast.Decl
 	for _, d := range f.Decls {
 		gd, ok := d.(*goast.GenDecl)
 		if ok && gd.Tok == gotoken.IMPORT {
+			if firstImport == nil {
+				firstImport = gd
+			}
 			if parenImport == nil && gd.Lparen.IsValid() {
 				parenImport = gd
 				newDecls = append(newDecls, d)
@@ -953,13 +956,34 @@ func ensureImports(f *goast.File, phs []placeholder, qualifyHTML bool) {
 	f.Decls = newDecls
 	f.Imports = specs
 
+	// The printer estimates where a node without a position falls from how
+	// much it has written, and flushes any comment it thinks it has passed.
+	// The specs added here are longer than what they replace, so a doc comment
+	// on the declaration after the imports ended up among them. Anchor every
+	// spec where the import block starts: the comment then follows the block,
+	// and with no line gaps between specs to preserve, the grouping is
+	// formatImportGroups' alone rather than an accident of source positions.
+	at := f.Name.End()
+	switch {
+	case parenImport != nil:
+		at = parenImport.Lparen
+	case firstImport != nil:
+		at = firstImport.Pos()
+	}
+	for _, s := range specs {
+		s.Path.ValuePos = at
+		if s.Name != nil {
+			s.Name.NamePos = at
+		}
+	}
+
 	if parenImport != nil {
 		parenImport.Specs = nil
 		for _, s := range specs {
 			parenImport.Specs = append(parenImport.Specs, s)
 		}
 	} else {
-		impDecl := &goast.GenDecl{Tok: gotoken.IMPORT}
+		impDecl := &goast.GenDecl{Tok: gotoken.IMPORT, TokPos: at, Lparen: at, Rparen: at}
 		for _, s := range specs {
 			impDecl.Specs = append(impDecl.Specs, s)
 		}
@@ -1241,66 +1265,69 @@ func indentCode(s, indent string, first bool) string {
 	return b.String()
 }
 
+// formatImportGroups lays out each parenthesized import block as two groups,
+// the standard library and then everything else, separated by a blank line.
+// gofmt then sorts within each group.
+//
+// A block holding anything other than import specs, such as a comment, is left
+// as printed rather than risk detaching the comment from the spec it is about.
 func formatImportGroups(src string) string {
-	// Ensure a blank line between stdlib imports and non-stdlib imports.
-	// We only handle the common gofmt form:
-	//   import (
-	//       "fmt"
-	//       . "maragu.dev/gomponents"
-	//   )
 	lines := strings.Split(src, "\n")
-	inImport := false
 	var out []string
-	seenNonStd := false
-	insertedGap := false
-
-	for _, line := range lines {
-		trim := strings.TrimSpace(line)
-		if strings.HasPrefix(trim, "import") && strings.HasSuffix(trim, "(") {
-			inImport = true
-			seenNonStd = false
-			insertedGap = false
-			out = append(out, line)
+	for i := 0; i < len(lines); i++ {
+		trim := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(trim, "import") || !strings.HasSuffix(trim, "(") {
+			out = append(out, lines[i])
 			continue
 		}
-		if inImport && trim == ")" {
-			inImport = false
-			out = append(out, line)
-			continue
+		end := i + 1
+		for end < len(lines) && strings.TrimSpace(lines[end]) != ")" {
+			end++
 		}
-		if inImport {
-			// import spec line: maybe starts with . or _ or identifier; find the quoted path.
-			q := strings.Index(line, "\"")
-			if q >= 0 {
-				qq := strings.Index(line[q+1:], "\"")
-				if qq >= 0 {
-					path := line[q+1 : q+1+qq]
-					isStd := isStdImportPath(path)
-					if !isStd {
-						if !seenNonStd {
-							seenNonStd = true
-						}
-					} else if seenNonStd {
-						// std after non-std shouldn't happen with our sorter; ignore
-					}
-					// Insert gap at boundary: first non-std after last std.
-					if !insertedGap && !isStd {
-						// If previous output line is a std import (not blank and within import),
-						// insert a blank line before this non-std import.
-						if len(out) > 0 {
-							prev := strings.TrimSpace(out[len(out)-1])
-							if prev != "" && prev != "(" && prev != "import (" {
-								out = append(out, "")
-								insertedGap = true
-							}
-						}
-					}
-				}
-			}
+		if end == len(lines) {
+			out = append(out, lines[i:]...)
+			break
 		}
-		out = append(out, line)
+		std, other, ok := splitImportSpecs(lines[i+1 : end])
+		out = append(out, lines[i])
+		switch {
+		case !ok:
+			out = append(out, lines[i+1:end]...)
+		case len(std) > 0 && len(other) > 0:
+			out = append(append(append(out, std...), ""), other...)
+		default:
+			out = append(append(out, std...), other...)
+		}
+		out = append(out, lines[end])
+		i = end
 	}
 	return strings.Join(out, "\n")
+}
+
+// splitImportSpecs partitions the lines of an import block into standard
+// library and other specs, dropping blank lines. It reports false when a line
+// is not a single import spec.
+func splitImportSpecs(lines []string) (std, other []string, ok bool) {
+	for _, line := range lines {
+		trim := strings.TrimSpace(line)
+		if trim == "" {
+			continue
+		}
+		q := strings.IndexByte(trim, '"')
+		if q < 0 || strings.Contains(trim, "//") || strings.Contains(trim, "/*") {
+			return nil, nil, false
+		}
+		path, err := strconv.Unquote(trim[q:])
+		if err != nil {
+			return nil, nil, false
+		}
+		if isStdImportPath(path) {
+			std = append(std, line)
+		} else {
+			other = append(other, line)
+		}
+	}
+	return std, other, true
 }
 
 func isStdImportPath(path string) bool {
