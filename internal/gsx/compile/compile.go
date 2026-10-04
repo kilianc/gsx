@@ -553,6 +553,9 @@ func inferRHSType(rhs goast.Expr, phNames map[string]bool, funcReturnTypes map[s
 	if gomponents.IsExprStringish(rhs) {
 		return "string"
 	}
+	if gomponents.IsExprBoolish(rhs, gomponents.Context{}) {
+		return "bool"
+	}
 	if gomponents.IsLikelyNodeExpr(rhs, gomponents.Context{FuncReturnTypes: funcReturnTypes}) {
 		return "Node"
 	}
@@ -684,6 +687,8 @@ func typeString(t goast.Expr) string {
 			return "Node"
 		case "string":
 			return "string"
+		case "bool":
+			return "bool"
 		}
 	case *goast.SelectorExpr:
 		if tt.Sel != nil && tt.Sel.Name == "Node" {

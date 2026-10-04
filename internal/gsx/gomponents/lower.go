@@ -179,6 +179,33 @@ func IsLikelyNodeExpr(ex goast.Expr, ctx Context) bool {
 	}
 }
 
+// IsExprBoolish reports whether e is provably a bool: a bool literal, a
+// comparison, a logical operator, or a variable or field known to be bool.
+func IsExprBoolish(e goast.Expr, ctx Context) bool {
+	switch t := e.(type) {
+	case *goast.ParenExpr:
+		return IsExprBoolish(t.X, ctx)
+	case *goast.Ident:
+		if t.Name == "true" || t.Name == "false" {
+			return true
+		}
+		return ctx.VarTypes[t.Name] == "bool"
+	case *goast.SelectorExpr:
+		if x, ok := t.X.(*goast.Ident); ok {
+			return ctx.VarTypes[x.Name+"."+t.Sel.Name] == "bool"
+		}
+	case *goast.UnaryExpr:
+		return t.Op == gotoken.NOT
+	case *goast.BinaryExpr:
+		switch t.Op {
+		case gotoken.LAND, gotoken.LOR, gotoken.EQL, gotoken.NEQ,
+			gotoken.LSS, gotoken.LEQ, gotoken.GTR, gotoken.GEQ:
+			return true
+		}
+	}
+	return false
+}
+
 func IsExprStringish(e goast.Expr) bool {
 	if bl, ok := e.(*goast.BasicLit); ok && bl.Kind == gotoken.STRING {
 		return true
@@ -550,6 +577,15 @@ func lowerAttr(a ast.Attr, ctx Context) (goast.Expr, error) {
 		// include the attribute node only when cond is true.
 		if fn := htmlBoolAttrFunc(a.Key); fn != "" {
 			return call(goast.NewIdent("If"), ex, call(ctx.htmlIdent(fn))), nil
+		}
+
+		// A bool expression on any other attribute means the same thing: HTML
+		// has more boolean attributes (open, hidden, inert, novalidate, ...)
+		// than gomponents has constructors for, and Attr takes only strings.
+		// ARIA states are the exception: they want "true" or "false", not a
+		// bare attribute, so those are left for Go to reject.
+		if IsExprBoolish(ex, ctx) && !strings.HasPrefix(canonicalAttr(a.Key), "aria-") {
+			return call(goast.NewIdent("If"), ex, call(goast.NewIdent("Attr"), strLit(a.Key))), nil
 		}
 
 		// Otherwise it's a string-ish attribute. We do not auto-coerce; let Go typecheck it.
