@@ -37,6 +37,9 @@ type tables struct {
 	// exports is every exported name in gomponents/html, used to decide whether
 	// a bare identifier written by the user needs an `html.` qualifier.
 	exports []string
+	// rootExports is every exported name in gomponents itself, used to decide
+	// whether a generated file refers to its dot import at all.
+	rootExports []string
 }
 
 func main() {
@@ -63,6 +66,12 @@ func run() error {
 	}
 	if len(t.elements) == 0 || len(t.stringAttrs) == 0 {
 		return fmt.Errorf("extracted nothing from %s; did the gomponents API change?", htmlDir)
+	}
+	if t.rootExports, err = exportedNames(dir); err != nil {
+		return err
+	}
+	if len(t.rootExports) == 0 {
+		return fmt.Errorf("extracted nothing from %s; did the gomponents API change?", dir)
 	}
 
 	src, err := t.render(dir)
@@ -215,7 +224,58 @@ func (t *tables) render(modDir string) ([]byte, error) {
 	}
 	fmt.Fprintf(&b, "}\n")
 
+	fmt.Fprintf(&b, "\n// gomponentsExports is every exported name in gomponents itself, which\n")
+	fmt.Fprintf(&b, "// generated files dot-import. The import is added only when one is used.\n")
+	fmt.Fprintf(&b, "var gomponentsExports = map[string]bool{\n")
+	for _, name := range t.rootExports {
+		fmt.Fprintf(&b, "\t%q: true,\n", name)
+	}
+	fmt.Fprintf(&b, "}\n")
+
 	return format.Source(b.Bytes())
+}
+
+// exportedNames returns every exported top-level name declared in the package
+// in dir, sorted: functions, types, constants and variables.
+func exportedNames(dir string) ([]string, error) {
+	fset := token.NewFileSet()
+	pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
+		return !strings.HasSuffix(fi.Name(), "_test.go")
+	}, 0)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	add := func(id *ast.Ident) {
+		if id.IsExported() {
+			names = append(names, id.Name)
+		}
+	}
+	for _, pkg := range pkgs {
+		for _, file := range pkg.Files {
+			for _, decl := range file.Decls {
+				switch d := decl.(type) {
+				case *ast.FuncDecl:
+					if d.Recv == nil {
+						add(d.Name)
+					}
+				case *ast.GenDecl:
+					for _, spec := range d.Specs {
+						switch sp := spec.(type) {
+						case *ast.TypeSpec:
+							add(sp.Name)
+						case *ast.ValueSpec:
+							for _, n := range sp.Names {
+								add(n)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	sort.Strings(names)
+	return names, nil
 }
 
 func writeStringMap(b *bytes.Buffer, name string, m map[string]string) {

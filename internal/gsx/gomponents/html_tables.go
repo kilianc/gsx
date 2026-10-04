@@ -397,3 +397,23 @@ var htmlExports = map[string]bool{
 	"Wbr":                 true,
 	"Width":               true,
 }
+
+// gomponentsExports is every exported name in gomponents itself, which
+// generated files dot-import. The import is added only when one is used.
+var gomponentsExports = map[string]bool{
+	"Attr":          true,
+	"AttributeType": true,
+	"El":            true,
+	"ElementType":   true,
+	"Group":         true,
+	"If":            true,
+	"Iff":           true,
+	"Map":           true,
+	"Node":          true,
+	"NodeFunc":      true,
+	"NodeType":      true,
+	"Raw":           true,
+	"Rawf":          true,
+	"Text":          true,
+	"Textf":         true,
+}
