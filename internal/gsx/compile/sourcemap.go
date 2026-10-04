@@ -208,6 +208,7 @@ func (sm *SourceMap) SourcePositionFromTarget(p Position) (Position, bool) {
 type requiredImports struct {
 	needsTags       bool
 	needsComponents bool
+	needsHTML       bool
 	qualifyHTML     bool
 }
 
@@ -238,9 +239,11 @@ func applyImportEdits(rewritten string, req requiredImports) importEditResult {
 	}
 
 	want := []string{`. "maragu.dev/gomponents"`}
-	if req.qualifyHTML {
+	switch {
+	case !req.needsHTML:
+	case req.qualifyHTML:
 		want = append(want, `html "maragu.dev/gomponents/html"`)
-	} else {
+	default:
 		want = append(want, `. "maragu.dev/gomponents/html"`)
 	}
 	if req.needsComponents {

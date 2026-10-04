@@ -1,6 +1,9 @@
 package compile
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // The pretty-printer collapses generated Go onto one line and re-indents it to
 // the call site. Doing either inside a literal silently rewrites the program's
@@ -61,5 +64,28 @@ func TestLiteralLen(t *testing.T) {
 		if got := literalLen(tt.in, tt.i); got != tt.want {
 			t.Errorf("literalLen(%q) = %d, want %d", tt.in, got, tt.want)
 		}
+	}
+}
+
+// A file whose only markup is a fragment lowers to Group alone. Importing
+// gomponents/html anyway fails the build, and gopls reports the same error in
+// the editor, so neither output may carry the import.
+func TestFragmentOnlyOmitsHTMLImport(t *testing.T) {
+	src := []byte("package p\n\nfunc both(a, b Node) Node {\n\treturn <>{a}{b}</>\n}\n")
+
+	built, err := CompileFile("p.gsx", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(built), "gomponents/html") {
+		t.Errorf("CompileFile imports gomponents/html:\n%s", built)
+	}
+
+	view, _, err := CompileFileForLSP("p.gsx", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(view), "gomponents/html") {
+		t.Errorf("CompileFileForLSP imports gomponents/html:\n%s", view)
 	}
 }

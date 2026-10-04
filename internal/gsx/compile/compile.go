@@ -167,6 +167,7 @@ func CompileFileForLSP(path string, src []byte) (goSrc []byte, sm *SourceMap, er
 	// Apply minimal import edits and inline placeholder expansions to produce a gopls-friendly Go view.
 	req := detectRequiredImports(mapping, mapsToSlice(loweredExprs))
 	req.qualifyHTML = cr.qualifyHTML
+	req.needsHTML = usesHTML(cr.af, mapping, cr.qualifyHTML)
 	impRes := applyImportEdits(rewritten, req)
 
 	// When we changed imports, all subsequent placeholder offsets shift.
@@ -839,6 +840,7 @@ func ensureImports(f *goast.File, phs []placeholder, qualifyHTML bool) {
 
 	needsFmt := usesPkgSelector(f, "fmt")
 	needsComponents := usesIdent(f, "JoinAttrs") || usesIdent(f, "Classes")
+	needsHTML := usesHTML(f, phs, qualifyHTML)
 	for _, p := range phs {
 		if !needsFmt && usesPkgSelector(p.expr, "fmt") {
 			needsFmt = true
@@ -869,6 +871,8 @@ func ensureImports(f *goast.File, phs []placeholder, qualifyHTML bool) {
 	var add []impSpec
 	if needsTags {
 		add = append(add, impSpec{name: ".", path: "maragu.dev/gomponents"})
+	}
+	if needsHTML {
 		if qualifyHTML {
 			add = append(add, impSpec{name: "html", path: "maragu.dev/gomponents/html"})
 		} else {
@@ -989,6 +993,25 @@ func ensureImports(f *goast.File, phs []placeholder, qualifyHTML bool) {
 		}
 		f.Decls = append([]goast.Decl{impDecl}, f.Decls...)
 	}
+}
+
+// usesHTML reports whether the generated file calls into gomponents/html. A
+// file whose only markup is fragments lowers to Group alone, and Go rejects an
+// unused import. Without qualification there is no selector to look for, so
+// the dot import is kept whenever there is markup.
+func usesHTML(f *goast.File, phs []placeholder, qualifyHTML bool) bool {
+	if len(phs) == 0 {
+		return false
+	}
+	if !qualifyHTML || usesPkgSelector(f, "html") {
+		return true
+	}
+	for _, p := range phs {
+		if usesPkgSelector(p.expr, "html") {
+			return true
+		}
+	}
+	return false
 }
 
 func usesPkgSelector(node goast.Node, pkg string) bool {
