@@ -40,6 +40,68 @@ type Change struct {
 func Releases() []Release {
 	return []Release{
 		{
+			Version:  "v0.3.3",
+			Date:     "2026-10-04",
+			Previous: "v0.3.2",
+			Summary: "Three compiler fixes, each for a `.gsx` file that compiled to Go that was wrong or did " +
+				"not build. Nothing in the language changed. Every generated file's import block is laid " +
+				"out differently once, by a line or two, so expect that diff on the first regenerate; " +
+				"nothing below the imports moves.",
+			Changes: []Change{{
+				Title: "A bool expression works on any attribute",
+				Refs:  []int{54},
+				Body: []string{
+					"`<details open={open}>` compiled to `Attr(\"open\", open)`, and `Attr` takes strings, so the " +
+						"file did not build. Only the attributes gomponents has a boolean constructor for — " +
+						"`checked`, `selected`, `disabled` and a dozen more — were treated as booleans, and HTML " +
+						"has more than that: `open`, `hidden`, `inert`, `novalidate`, `allowfullscreen`, " +
+						"`itemscope`.",
+					"The compiler now decides by the expression rather than the attribute name. When it is " +
+						"provably a bool — a literal, a comparison, `!`, `&&` or `||`, or a variable or struct " +
+						"field typed `bool` — the attribute renders bare when true and not at all when false. " +
+						"`aria-*` is the exception: ARIA states want `\"true\"` or `\"false\"`, so a bool there is " +
+						"still left for Go to reject rather than rendered wrong.",
+				},
+			}, {
+				Title: "A doc comment after the imports stays on its declaration",
+				Refs:  []int{55},
+				Body: []string{
+					"The import specs the compiler adds had no source position, and the printer, estimating " +
+						"where they fell from how much it had written, flushed the next declaration's doc " +
+						"comment in among them. `go doc` and editors lost the comment. With no imports in the " +
+						"source it landed between `import` and `(`.",
+					"The import block is now laid out deliberately rather than by an accident of positions: the " +
+						"standard library, a blank line, then everything else, as goimports does.",
+				},
+			}, {
+				Title: "A file whose only markup is a fragment builds",
+				Refs:  []int{56},
+				Body: []string{
+					"Any markup made the compiler import `maragu.dev/gomponents/html`, but `<>{a}{b}</>` lowers " +
+						"to `Group{a, b}` and uses nothing from it, so Go rejected the unused import. It is now " +
+						"imported only when the generated code calls into it, in the build and in the view the " +
+						"language server hands gopls.",
+				},
+			}},
+		},
+		{
+			Version:  "v0.3.2",
+			Date:     "2026-08-16",
+			Previous: "v0.3.1",
+			Summary: "One fix in the compiler. Nothing in the language changed and every generated file in " +
+				"this repository is byte-identical, so upgrading is the install and nothing else.",
+			Changes: []Change{{
+				Title: "Splice type inference is scoped to the enclosing function",
+				Refs:  []int{50},
+				Body: []string{
+					"Inference kept one name-to-type map for the whole file, so a string local in one function " +
+						"could be spliced as a Node because another function had a Node local by the same name: " +
+						"a `status` here made a `status` there compile as `html.Span(status)` and fail. The " +
+						"renames the bug forced downstream can be undone.",
+				},
+			}},
+		},
+		{
 			Version:  "v0.3.1",
 			Date:     "2026-08-13",
 			Previous: "v0.3.0",
