@@ -89,3 +89,25 @@ func TestFragmentOnlyOmitsHTMLImport(t *testing.T) {
 		t.Errorf("CompileFileForLSP imports gomponents/html:\n%s", view)
 	}
 }
+
+// The counterpart: markup that lowers only to html calls uses nothing from
+// gomponents itself, so neither output may carry its dot import.
+func TestHTMLOnlyOmitsGomponentsImport(t *testing.T) {
+	src := []byte("package p\n\nvar lineBreak = <br />\n")
+
+	built, err := CompileFile("p.gsx", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(built), `"maragu.dev/gomponents"`) {
+		t.Errorf("CompileFile imports gomponents:\n%s", built)
+	}
+
+	view, _, err := CompileFileForLSP("p.gsx", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(view), `"maragu.dev/gomponents"`) {
+		t.Errorf("CompileFileForLSP imports gomponents:\n%s", view)
+	}
+}

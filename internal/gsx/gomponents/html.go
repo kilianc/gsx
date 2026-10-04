@@ -113,6 +113,10 @@ func AttributeNames() []string {
 // can insert `disabled` rather than `disabled=""`.
 func IsBooleanAttribute(name string) bool { return htmlBoolAttrs[canonicalAttr(name)] != "" }
 
+// IsGomponentsExport reports whether name is exported by gomponents itself,
+// so a bare reference to it needs the dot import generated files carry.
+func IsGomponentsExport(name string) bool { return gomponentsExports[name] }
+
 func sortedKeys(m map[string]string) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

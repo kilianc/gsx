@@ -209,6 +209,7 @@ type requiredImports struct {
 	needsTags       bool
 	needsComponents bool
 	needsHTML       bool
+	needsGomponents bool
 	qualifyHTML     bool
 }
 
@@ -238,7 +239,10 @@ func applyImportEdits(rewritten string, req requiredImports) importEditResult {
 		return importEditResult{out: rewritten}
 	}
 
-	want := []string{`. "maragu.dev/gomponents"`}
+	var want []string
+	if req.needsGomponents {
+		want = append(want, `. "maragu.dev/gomponents"`)
+	}
 	switch {
 	case !req.needsHTML:
 	case req.qualifyHTML:
@@ -248,6 +252,9 @@ func applyImportEdits(rewritten string, req requiredImports) importEditResult {
 	}
 	if req.needsComponents {
 		want = append(want, `. "maragu.dev/gomponents/components"`)
+	}
+	if len(want) == 0 {
+		return importEditResult{out: rewritten}
 	}
 
 	// Find an existing import decl in a very conservative way: only within the leading region before the first "func".

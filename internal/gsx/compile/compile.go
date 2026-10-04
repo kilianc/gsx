@@ -168,6 +168,7 @@ func CompileFileForLSP(path string, src []byte) (goSrc []byte, sm *SourceMap, er
 	req := detectRequiredImports(mapping, mapsToSlice(loweredExprs))
 	req.qualifyHTML = cr.qualifyHTML
 	req.needsHTML = usesHTML(cr.af, mapping, cr.qualifyHTML)
+	req.needsGomponents = usesGomponents(cr.af, mapping)
 	impRes := applyImportEdits(rewritten, req)
 
 	// When we changed imports, all subsequent placeholder offsets shift.
@@ -835,12 +836,10 @@ type placeholder struct {
 }
 
 func ensureImports(f *goast.File, phs []placeholder, qualifyHTML bool) {
-	// We always need dot imports for gomponents + html when any tags exist.
-	needsTags := len(phs) > 0
-
 	needsFmt := usesPkgSelector(f, "fmt")
 	needsComponents := usesIdent(f, "JoinAttrs") || usesIdent(f, "Classes")
 	needsHTML := usesHTML(f, phs, qualifyHTML)
+	needsGomponents := usesGomponents(f, phs)
 	for _, p := range phs {
 		if !needsFmt && usesPkgSelector(p.expr, "fmt") {
 			needsFmt = true
@@ -869,7 +868,7 @@ func ensureImports(f *goast.File, phs []placeholder, qualifyHTML bool) {
 	}
 
 	var add []impSpec
-	if needsTags {
+	if needsGomponents {
 		add = append(add, impSpec{name: ".", path: "maragu.dev/gomponents"})
 	}
 	if needsHTML {
@@ -1012,6 +1011,53 @@ func usesHTML(f *goast.File, phs []placeholder, qualifyHTML bool) bool {
 		}
 	}
 	return false
+}
+
+// usesGomponents reports whether the generated file refers to a name from its
+// gomponents dot import. Markup that lowers only to html calls, such as
+// `<br />`, uses none, and Go rejects an unused import.
+//
+// The file's own references are the identifiers the parser could not resolve
+// in it, which leaves out field names, selectors and local declarations. The
+// lowered markup was never parsed, so it is walked instead.
+func usesGomponents(f *goast.File, phs []placeholder) bool {
+	if len(phs) == 0 {
+		return false
+	}
+	for _, id := range f.Unresolved {
+		if gomponents.IsGomponentsExport(id.Name) {
+			return true
+		}
+	}
+	for _, p := range phs {
+		if usesBareName(p.expr, gomponents.IsGomponentsExport) {
+			return true
+		}
+	}
+	return false
+}
+
+// usesBareName reports whether node refers to an identifier matching want,
+// other than as the name half of a selector or the key of a composite literal.
+func usesBareName(node goast.Node, want func(string) bool) bool {
+	found := false
+	goast.Inspect(node, func(n goast.Node) bool {
+		if found || n == nil {
+			return false
+		}
+		switch t := n.(type) {
+		case *goast.SelectorExpr:
+			found = usesBareName(t.X, want)
+			return false
+		case *goast.KeyValueExpr:
+			found = usesBareName(t.Value, want)
+			return false
+		case *goast.Ident:
+			found = want(t.Name)
+		}
+		return true
+	})
+	return found
 }
 
 func usesPkgSelector(node goast.Node, pkg string) bool {
